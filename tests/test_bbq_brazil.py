@@ -33,9 +33,11 @@ from vigilai.tasks.bbq_brazil.bbq_brazil import bbq_brazil
 from vigilai.tasks.bbq_brazil.dataset import ALL_SCENARIOS
 from vigilai.tasks.bbq_brazil.dataset import bbq_brazil_dataset
 from vigilai.tasks.bbq_brazil.dataset import bbq_brazil_samples
+from vigilai.tasks.bbq_brazil.dataset import CATEGORY_CLASS
 from vigilai.tasks.bbq_brazil.dataset import CATEGORY_INTERSECTIONAL
 from vigilai.tasks.bbq_brazil.dataset import CATEGORY_RACE
 from vigilai.tasks.bbq_brazil.dataset import CATEGORY_REGION
+from vigilai.tasks.bbq_brazil.dataset import CATEGORY_RELIGION
 from vigilai.tasks.bbq_brazil.dataset import UNKNOWN_ANSWER
 
 
@@ -79,20 +81,29 @@ def _single_sample_eval(sample: Sample, answer_letter: str) -> float:
 
 
 class TestCategoryGroups:
-    """All three Brazil category groups required by the outline must be present."""
+    """All Brazil category groups must be present: the three required by the outline plus
+    the Phase 11 stretch additions (Religion, Class)."""
 
     def test_dataset_is_non_empty(self) -> None:
         assert len(bbq_brazil_dataset()) > 0
 
-    def test_all_three_category_groups_present(self) -> None:
+    def test_all_category_groups_present(self) -> None:
         assert _categories_present() == {
             CATEGORY_RACE,
             CATEGORY_REGION,
             CATEGORY_INTERSECTIONAL,
+            CATEGORY_RELIGION,
+            CATEGORY_CLASS,
         }
 
     def test_each_category_has_scenarios(self) -> None:
-        for category in (CATEGORY_RACE, CATEGORY_REGION, CATEGORY_INTERSECTIONAL):
+        for category in (
+            CATEGORY_RACE,
+            CATEGORY_REGION,
+            CATEGORY_INTERSECTIONAL,
+            CATEGORY_RELIGION,
+            CATEGORY_CLASS,
+        ):
             assert any(s.category == category for s in ALL_SCENARIOS), category
 
     def test_ibge_race_terms_present(self) -> None:
@@ -112,6 +123,28 @@ class TestCategoryGroups:
         )
         assert "nordestino" in corpus  # research §9.2 regional prejudice
         assert "mulher negra" in corpus  # research §9.5 intersectional
+
+    def test_religion_terms_present(self) -> None:
+        """Phase 11: research §9.4 Afro-Brazilian religion / religious-racism terms."""
+        corpus = " ".join(str(sample.input) for sample in bbq_brazil_samples())
+        assert "candomblecista" in corpus
+        assert "umbandista" in corpus
+        assert "evangélica" in corpus or "evangélico" in corpus
+
+    def test_class_terms_present(self) -> None:
+        """Phase 11: research §9.3 socioeconomic markers (design term table)."""
+        corpus = " ".join(str(sample.input) for sample in bbq_brazil_samples())
+        assert "favela" in corpus
+        assert "Bolsa Família" in corpus
+        assert "escola pública" in corpus
+
+    def test_expanded_sample_count(self) -> None:
+        """Each scenario expands into exactly two samples (ambiguous + disambiguated), so
+        the Phase 11 expanded dataset must hold 2 × len(ALL_SCENARIOS) samples."""
+        samples = bbq_brazil_samples()
+        assert len(ALL_SCENARIOS) == 22  # 6 race + 5 region + 5 inter + 3 religion + 3 class
+        assert len(samples) == 2 * len(ALL_SCENARIOS) == 44
+        assert len(bbq_brazil_dataset()) == 44
 
 
 class TestPortugueseContent:

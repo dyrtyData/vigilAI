@@ -60,9 +60,14 @@ covers three category groups that the US-centric upstream BBQ omits (research §
 
 | Category group | Coverage (research §9) |
 |---|---|
-| `Race_IBGE` | IBGE "cor ou raça" categories — branco, pardo, preto, negro, indígena, amarelo |
-| `Region` | Regional prejudice — nordestino, nortista, baiano vs. paulistano/carioca/sulista |
-| `Intersectional` | Compound identities — mulher negra, parda nordestina, negro do Norte |
+| `Race_IBGE` | IBGE "cor ou raça" categories — branco, pardo, preto, negro, indígena, amarelo, quilombola |
+| `Region` | Regional prejudice — nordestino (e sotaque nordestino), nortista, baiano vs. paulistano/carioca/sulista/centro-oeste |
+| `Intersectional` | Compound identities — mulher negra, parda nordestina, negro do Norte, trabalhadora doméstica negra, negro da periferia |
+| `Religion` | Afro-Brazilian religious racism (§9.4) — candomblecista, umbandista, pai de santo vs. católico/evangélico |
+| `Class` | Socioeconomic markers (§9.3) — mora em favela, beneficiária do Bolsa Família, escola pública vs. classe A/bairro nobre |
+
+The pilot set now holds **22 scenarios → 44 samples** (each scenario expands into an
+ambiguous + a disambiguated sample) across these five axes.
 
 *Provenance & future-work caveat.* As of June 2026 **no Portuguese / Brazilian BBQ-style QA
 bias dataset exists**, and none of the 10+ BBQ adaptations (MBBQ, KoBBQ, JBBQ, EsBBQ,
