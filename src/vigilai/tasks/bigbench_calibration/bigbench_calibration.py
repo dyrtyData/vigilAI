@@ -222,7 +222,11 @@ def bigbench_calibration_scorer() -> Scorer:
     return score
 
 
-@task(technical_requirement="Interpretability")
+@task(
+    technical_requirement="Interpretability",
+    brazil_article="Art. 6, I",
+    brazil_scope="high_risk",
+)
 def bigbench_calibration(
     bigbench_task: BigBenchTask = "emoji_movie",
     num_few_shot: int = 3,

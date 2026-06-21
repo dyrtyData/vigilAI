@@ -223,7 +223,11 @@ def triviaqa_calibration_scorer() -> Scorer:
     return score
 
 
-@task(technical_requirement="Interpretability")
+@task(
+    technical_requirement="Interpretability",
+    brazil_article="Art. 6, I",
+    brazil_scope="high_risk",
+)
 def triviaqa_calibration(
     triviaqa_subset: TriviaQASubset = "rc.wikipedia",
     split: str = "validation",

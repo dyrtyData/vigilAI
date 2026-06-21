@@ -20,11 +20,43 @@ This project was built for the **Global South AI Safety Hackathon** (Latam Gover
 
 ## Status
 
-- **Phase 1 (current):** COMPL-AI forked into the `vigilai` package and CLI; all 30 original
-  tasks preserved and runnable.
-- Later phases add the Brazil PL 2338/2023 article-mapping metadata, Brazil-specific
-  benchmarks, and a per-article compliance report. *(The EU↔Brazil mapping table is added
-  in Phase 2.)*
+- **Phase 1:** COMPL-AI forked into the `vigilai` package and CLI; all 30 original tasks
+  preserved and runnable.
+- **Phase 2 (current):** Brazil PL 2338/2023 article-mapping metadata layered over the
+  preserved EU technical requirements and surfaced in `vigilai list` (see the EU↔Brazil
+  mapping below).
+- Later phases add Brazil-specific benchmarks and a per-article compliance report.
+
+## EU ↔ Brazil mapping
+
+vigilAI keeps COMPL-AI's nine EU-AI-Act `technical_requirement` categories unchanged (so
+the EU benchmarks stay comparable) and tags the relevant tasks with their **Brazil PL
+2338/2023** equivalent. PL 2338/2023 places its rights in **Chapter II ("Dos Direitos")**:
+**Art. 5** rights apply to *all* AI systems, while **Art. 6** rights apply to *high-risk*
+systems only — captured by the `brazil_scope` tag (`all_ai` vs `high_risk`). The single
+source of truth for this table is [`src/vigilai/brazil/mapping.py`](src/vigilai/brazil/mapping.py).
+
+| EU technical requirement (COMPL-AI) | Brazil PL 2338/2023 | Scope | Right | Tasks |
+|---|---|---|---|---|
+| Disclosure of AI | **Art. 5, I** | `all_ai` | Prior information | `human_deception` |
+| Representation — Absence of Bias | **Art. 5, III** | `all_ai` | Non-discrimination | `bbq`, `bold`, `cab` |
+| Fairness — Absence of Discrimination | **Art. 5, III** | `all_ai` | Non-discrimination | `decoding_trust`, `fairllm` |
+| Interpretability | **Art. 6, I** | `high_risk` | Explanation (cf. LGPD Art. 20) | `bigbench_calibration`, `triviaqa_calibration` |
+
+The remaining EU technical requirements (Capabilities/Performance/Limitations, Robustness
+and Predictability, Cyberattack Resilience, Societal Alignment, Harmful Content and
+Toxicity) have **no direct Brazil Chapter II counterpart** and are listed as "no Brazil
+mapping" — that absence is itself a finding. Brazil's Art. 6 explanation right and the
+Algorithmic Impact Assessment obligations (Arts. 25-28) likewise have no dedicated EU
+COMPL-AI benchmark; new Brazil-specific benchmarks for them are added in later phases.
+
+```bash
+# Group tasks by EU technical requirement, annotated with the Brazil mapping (default)
+uv run vigilai list
+
+# Group tasks by Brazil PL 2338/2023 article instead
+uv run vigilai list --brazil
+```
 
 ## Install
 

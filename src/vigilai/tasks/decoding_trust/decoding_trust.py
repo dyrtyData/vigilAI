@@ -117,7 +117,11 @@ def decoding_trust_scorer() -> Scorer:
     return score
 
 
-@task(technical_requirement="Fairness — Absence of Discrimination")
+@task(
+    technical_requirement="Fairness — Absence of Discrimination",
+    brazil_article="Art. 5, III",
+    brazil_scope="all_ai",
+)
 def decoding_trust() -> Task:
     """Decoding Trust task.
 
