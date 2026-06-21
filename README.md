@@ -22,10 +22,48 @@ This project was built for the **Global South AI Safety Hackathon** (Latam Gover
 
 - **Phase 1:** COMPL-AI forked into the `vigilai` package and CLI; all 30 original tasks
   preserved and runnable.
-- **Phase 2 (current):** Brazil PL 2338/2023 article-mapping metadata layered over the
-  preserved EU technical requirements and surfaced in `vigilai list` (see the EU↔Brazil
-  mapping below).
-- Later phases add Brazil-specific benchmarks and a per-article compliance report.
+- **Phase 2:** Brazil PL 2338/2023 article-mapping metadata layered over the preserved EU
+  technical requirements and surfaced in `vigilai list` (see the EU↔Brazil mapping below).
+- **Phase 3:** `human_deception_brazil` benchmark (Art. 5, I — prior information / AI
+  disclosure), with Portuguese and LGPD/PL-2338 disclosure questions, reusing the upstream
+  `human_deception` scorer.
+- **Phase 4 (current):** `bbq_brazil` fairness benchmark (Art. 5, III — non-discrimination),
+  a Brazil-adapted BBQ covering IBGE racial categories, regional prejudice, and
+  intersectional identities (see "Brazil benchmark datasets" below).
+- Later phases add the explanation-quality and AIA benchmarks and a per-article compliance
+  report.
+
+## Brazil benchmark datasets
+
+The Brazil-specific benchmarks are **self-contained and offline** (the scenarios live in
+code, so mock-model evals and the test suite run deterministically with no network access).
+
+**`bbq_brazil` (Art. 5, III).** A Brazil-adapted [BBQ](https://aclanthology.org/2022.findings-acl.165/)
+(Parrish et al., ACL Findings 2022) bias benchmark in Portuguese. It reuses the *exact same*
+scoring path as the upstream `bbq` task (Inspect AI's `multiple_choice()` solver +
+`choice()` scorer), so the EU↔Brazil delta isolates purely the Brazil-specific content. It
+covers three category groups that the US-centric upstream BBQ omits (research §6 gaps):
+
+| Category group | Coverage (research §9) |
+|---|---|
+| `Race_IBGE` | IBGE "cor ou raça" categories — branco, pardo, preto, negro, indígena, amarelo |
+| `Region` | Regional prejudice — nordestino, nortista, baiano vs. paulistano/carioca/sulista |
+| `Intersectional` | Compound identities — mulher negra, parda nordestina, negro do Norte |
+
+*Provenance & future-work caveat.* As of June 2026 **no Portuguese / Brazilian BBQ-style QA
+bias dataset exists**, and none of the 10+ BBQ adaptations (MBBQ, KoBBQ, JBBQ, EsBBQ,
+PakBBQ, BharatBBQ, …) covers Portuguese or the IBGE 5-category racial taxonomy. The
+scenarios are therefore **authored for vigilAI** using the BBQ template methodology
+(ambiguous + disambiguated contexts), with the demographic terms drawn from research §9.
+Two existing resources **seed / anchor** the choice of realistic stereotypes but are
+deliberately *not* runtime data sources:
+[SHADES / BiasShades](https://huggingface.co/datasets/LanguageShades/BiasShades) (pt-BR
+stereotypes; license-gated) and
+[ToxSyn-PT](https://huggingface.co/datasets/ToxSyn/ToxSyn-PT) (CC BY 4.0; classification
+format). Other Brazilian hate-speech corpora (HateBR, ToLD-BR, OLID-BR) are classification,
+not QA, and use coarse race labels — noted as future-work resources only. **Full
+native-annotator validation and a larger sample count are documented future work**; the
+current set is a hand-built pilot sufficient to demonstrate the approach for the hackathon.
 
 ## EU ↔ Brazil mapping
 
@@ -38,8 +76,8 @@ source of truth for this table is [`src/vigilai/brazil/mapping.py`](src/vigilai/
 
 | EU technical requirement (COMPL-AI) | Brazil PL 2338/2023 | Scope | Right | Tasks |
 |---|---|---|---|---|
-| Disclosure of AI | **Art. 5, I** | `all_ai` | Prior information | `human_deception` |
-| Representation — Absence of Bias | **Art. 5, III** | `all_ai` | Non-discrimination | `bbq`, `bold`, `cab` |
+| Disclosure of AI | **Art. 5, I** | `all_ai` | Prior information | `human_deception`, `human_deception_brazil` |
+| Representation — Absence of Bias | **Art. 5, III** | `all_ai` | Non-discrimination | `bbq`, `bbq_brazil`, `bold`, `cab` |
 | Fairness — Absence of Discrimination | **Art. 5, III** | `all_ai` | Non-discrimination | `decoding_trust`, `fairllm` |
 | Interpretability | **Art. 6, I** | `high_risk` | Explanation (cf. LGPD Art. 20) | `bigbench_calibration`, `triviaqa_calibration` |
 

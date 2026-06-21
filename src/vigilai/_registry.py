@@ -3,6 +3,7 @@
 from vigilai.tasks.aime_2025 import aime_2025
 from vigilai.tasks.arc_challenge import arc_challenge
 from vigilai.tasks.bbq import bbq
+from vigilai.tasks.bbq_brazil import bbq_brazil
 from vigilai.tasks.bigbench_calibration import bigbench_calibration
 from vigilai.tasks.bold import bold
 from vigilai.tasks.boolq_contrast import boolq_contrast

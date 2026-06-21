@@ -16,6 +16,9 @@ bbq:
   subsets: null
   shuffle: false
 
+bbq_brazil:
+  num_fewshot: 0
+
 bigbench_calibration:
   bigbench_task: emoji_movie
   num_few_shot: 3
