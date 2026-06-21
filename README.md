@@ -39,6 +39,13 @@ This project was built for the **Global South AI Safety Hackathon** (Latam Gover
 - **Phase 7:** per-`brazil_article` compliance report with an **EU↔Brazil side-by-side**
   (`vigilai report <log_dir>`), plus demo run instructions for both a local and a hosted
   backend (see "Compliance report" and "Demo" below).
+- **Phase 8:** `contestation_review` benchmark (Art. 6, II + III — right to contest a
+  high-risk automated decision and right to human review / LGPD Art. 20), a novel rubric
+  benchmark scoring a response for the six contestation + human-review elements it must
+  contain. This **completes the high-risk Art. 6 rights triad** — explanation (Art. 6, I),
+  contestation (Art. 6, II), human review (Art. 6, III). **The EU AI Act has no individual
+  right to contest a model output, so there is no EU/COMPL-AI counterpart** — the literal
+  "beyond the EU" differentiator.
 
 ## Brazil benchmark datasets
 
@@ -53,9 +60,14 @@ covers three category groups that the US-centric upstream BBQ omits (research §
 
 | Category group | Coverage (research §9) |
 |---|---|
-| `Race_IBGE` | IBGE "cor ou raça" categories — branco, pardo, preto, negro, indígena, amarelo |
-| `Region` | Regional prejudice — nordestino, nortista, baiano vs. paulistano/carioca/sulista |
-| `Intersectional` | Compound identities — mulher negra, parda nordestina, negro do Norte |
+| `Race_IBGE` | IBGE "cor ou raça" categories — branco, pardo, preto, negro, indígena, amarelo, quilombola |
+| `Region` | Regional prejudice — nordestino (e sotaque nordestino), nortista, baiano vs. paulistano/carioca/sulista/centro-oeste |
+| `Intersectional` | Compound identities — mulher negra, parda nordestina, negro do Norte, trabalhadora doméstica negra, negro da periferia |
+| `Religion` | Afro-Brazilian religious racism (§9.4) — candomblecista, umbandista, pai de santo vs. católico/evangélico |
+| `Class` | Socioeconomic markers (§9.3) — mora em favela, beneficiária do Bolsa Família, escola pública vs. classe A/bairro nobre |
+
+The pilot set now holds **22 scenarios → 44 samples** (each scenario expands into an
+ambiguous + a disambiguated sample) across these five axes.
 
 *Provenance & future-work caveat.* As of June 2026 **no Portuguese / Brazilian BBQ-style QA
 bias dataset exists**, and none of the 10+ BBQ adaptations (MBBQ, KoBBQ, JBBQ, EsBBQ,
@@ -88,14 +100,19 @@ source of truth for this table is [`src/vigilai/brazil/mapping.py`](src/vigilai/
 | Fairness — Absence of Discrimination | **Art. 5, III** | `all_ai` | Non-discrimination | `decoding_trust`, `fairllm` |
 | Interpretability | **Art. 6, I** | `high_risk` | Calibration proxy for explanation (cf. LGPD Art. 20) | `bigbench_calibration`, `triviaqa_calibration` |
 | Interpretability | **Art. 6, I** | `high_risk` | Right to explanation — *Brazil-only benchmark, no EU equivalent* | `explanation_quality` |
+| _Societal Alignment (EU req. reused as a host)_ | **Art. 6, II-III** | `high_risk` | Right to contest + right to human review — *Brazil-only benchmark, no EU equivalent* | `contestation_review` |
 | _Societal Alignment (EU req. reused as a host)_ | **Arts. 25-28** | `high_risk` | Algorithmic Impact Assessment — *Brazil-only benchmark, no EU equivalent* | `aia_checklist` |
+
+Together, `explanation_quality` (Art. 6, I), `contestation_review` (Art. 6, II + III), and the
+upstream calibration tasks cover the **complete high-risk Art. 6 rights triad**: explanation,
+contestation, and human review.
 
 The remaining EU technical requirements (Capabilities/Performance/Limitations, Robustness
 and Predictability, Cyberattack Resilience, Societal Alignment, Harmful Content and
 Toxicity) have **no direct Brazil Chapter II counterpart** and are listed as "no Brazil
 mapping" — that absence is itself a finding.
 
-Two Brazil obligations have **no dedicated EU COMPL-AI benchmark at all**, so vigilAI adds
+Three Brazil obligations have **no dedicated EU COMPL-AI benchmark at all**, so vigilAI adds
 new benchmarks for them (and the compliance report renders them as "no EU equivalent" rows —
 itself a headline finding):
 
@@ -103,6 +120,15 @@ itself a headline finding):
   requirement only measures *calibration* (TriviaQA / BIG-Bench), which is a proxy, not the
   rights-based explanation Brazil's Art. 6 / LGPD Art. 20 require. So `explanation_quality`
   is filed under Art. 6, I via its **decorator tag**, alongside the calibration tasks.
+- **Art. 6, II + III — right to contest + right to human review** (`contestation_review`).
+  The **EU AI Act has no individual right to contest a model output**, so there is no EU
+  requirement to host this benchmark under. Like `aia_checklist`, it is tagged
+  `technical_requirement="Societal Alignment"` (an EU-only requirement deliberately absent
+  from the requirement→article mapping, so the other `Societal Alignment` tasks — `mask`,
+  `simpleqa_verified`, `truthfulqa` — stay unmapped) and carries
+  `brazil_article="Art. 6, II-III"` as a **per-task decorator tag**, resolved decorator-first
+  by both `vigilai list --brazil` and `vigilai report`. This completes the high-risk Art. 6
+  rights triad.
 - **Arts. 25-28 — Algorithmic Impact Assessment** (`aia_checklist`). The AIA is a PL 2338/2023
   *Chapter IV governance instrument*, not a Chapter II rights-requirement, so its article is
   **not** added to the requirement→article mapping (that would wrongly pull the other
@@ -157,21 +183,48 @@ or JSON report — including an **EU↔Brazil side-by-side**:
 ```bash
 # 1. Evaluate the EU pair tasks AND the Brazil tasks on the SAME model, into one run dir
 uv run vigilai eval mockllm/model \
-  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist \
+  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist \
   --limit 5
 
 # 2. Render the Brazil PL 2338/2023 compliance report for that run
-uv run vigilai report logs/<run-dir>          # Markdown to stdout (default)
-uv run vigilai report logs/<run-dir> --json   # machine-readable JSON
+uv run vigilai report logs/<run-dir>                      # Markdown to stdout (default)
+uv run vigilai report logs/<run-dir> --json              # machine-readable JSON
+uv run vigilai report logs/<run-dir> --html > scorecard.html  # self-contained HTML scorecard
+```
+
+The `--html` view is a **self-contained, color-coded compliance scorecard** (inline CSS, no
+external assets — opens offline anywhere): a per-article dashboard with band-colored scores and
+EU↔Brazil deltas, framed as the **Art. 28 "public conclusions" of the Algorithmic Impact
+Assessment** — the judge-facing AIA artifact. `--json` and `--html` are mutually exclusive. See
+[`reports/scorecard.html`](reports/scorecard.html) (also mirrored as
+[`scorecard-preview.html`](../.humanlayer/tasks/glo-5-global-south-ai-safety-hackathon-vigilai-brazil-ai-bill/scorecard-preview.html))
+for the headline scorecard generated from the scaled `anthropic/claude-haiku-4-5` run — the full
+Art. 6 triad visible. The **6-model dossier** [`reports/multimodel-scorecard.html`](reports/multimodel-scorecard.html)
+(one model per page; rebuild with `uv run python reports/build_multimodel_scorecard.py`) collects a
+scorecard page for every model in the panel.
+
+Every report (Markdown, JSON, and HTML) also includes a **Brazil compliance coverage map** across
+**all nine** COMPL-AI technical requirements — not just the four (of nine) that carry a bespoke
+Brazil benchmark. Each
+requirement is flagged ✅ (a Brazil-specific benchmark covers it), 🟡 (only the preserved EU/COMPL-AI
+task ran), or ⚪ (not covered in the run), so the report shows Brazil-compliance *breadth* at a
+glance. To exercise the full breadth, add one EU task per remaining requirement to the run, e.g.:
+
+```bash
+uv run vigilai eval mockllm/model \
+  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist,fairllm,forecast_consistency,arc_challenge \
+  --limit 3
+uv run vigilai report logs/<run-dir>   # 9-requirement coverage map at the bottom
 ```
 
 The side-by-side compares only the **two direct-adaptation pairs that reuse the exact same
 scorer** — `human_deception` ↔ `human_deception_brazil` and `bbq` ↔ `bbq_brazil` — so the
 delta isolates the Brazil-specific content (Portuguese disclosure questions; IBGE / regional /
-intersectional categories) rather than confounding scorer differences. `explanation_quality`
-and `aia_checklist` are reported as **Brazil-only** rows: Brazil's Art. 6 explanation right
-and the AIA obligations have no COMPL-AI/EU benchmark counterpart, and that absence is itself a
-finding. The pair set is an explicit constant (`EU_BRAZIL_PAIRS` in
+intersectional categories) rather than confounding scorer differences. `explanation_quality`,
+`contestation_review`, and `aia_checklist` are reported as **Brazil-only** rows: Brazil's
+Art. 6 explanation and contestation/human-review rights and the AIA obligations have no
+COMPL-AI/EU benchmark counterpart, and that absence is itself a finding. The pair set is an
+explicit constant (`EU_BRAZIL_PAIRS` in
 [`src/vigilai/report/brazil_report.py`](src/vigilai/report/brazil_report.py)).
 
 ### Headline result (scaled, multi-model)
@@ -181,50 +234,52 @@ finding. The pair set is an explicit constant (`EU_BRAZIL_PAIRS` in
 > `ollama/llama3.1:8b` ($0). **Full multi-model analysis, standard errors, conclusions, and
 > caveats: [reports/RESULTS.md](reports/RESULTS.md).**
 
-Per-article report (Claude Haiku 4.5, scaled), verbatim from `uv run vigilai report logs/<run>`:
+Per-article report (Claude Haiku 4.5, scaled, all **5** Brazil benchmarks on the deepened set),
+verbatim from `uv run vigilai report logs/<run>` — the run behind
+[`reports/scorecard.html`](reports/scorecard.html):
 
 ```markdown
 # Brazil PL 2338/2023 — Compliance Report
 
 - **Model(s):** anthropic/claude-haiku-4-5
-- **Brazil-mapped tasks scored:** 4
+- **Brazil-mapped tasks scored:** 5
 
 ## Compliance by Brazil article
 
 | Brazil article | Scope | Task | EU technical requirement | Score |
 |---|---|---|---|---|
 | Art. 5, I | all_ai | `human_deception_brazil` | Disclosure of AI | 0.524 |
-| **Art. 5, I — mean** | all_ai |  |  | **0.524** |
-| Art. 5, III | all_ai | `bbq_brazil` | Representation — Absence of Bias | 0.700 |
-| **Art. 5, III — mean** | all_ai |  |  | **0.700** |
-| Art. 6, I | high_risk | `explanation_quality` | Interpretability | 0.894 |
-| **Art. 6, I — mean** | high_risk |  |  | **0.894** |
-| Arts. 25-28 | high_risk | `aia_checklist` | Societal Alignment | 0.917 |
-| **Arts. 25-28 — mean** | high_risk |  |  | **0.917** |
+| Art. 5, III | all_ai | `bbq_brazil` (44 samples) | Representation — Absence of Bias | 0.677 |
+| Art. 6, I | high_risk | `explanation_quality` | Interpretability | 0.833 |
+| Art. 6, II-III | high_risk | `contestation_review` | (Societal Alignment host) | 0.975 |
+| Arts. 25-28 | high_risk | `aia_checklist` | Societal Alignment | 0.983 |
 ```
 
 **EU↔Brazil delta across models** (each pair reuses the exact same scorer, so Δ isolates the
-Brazil-specific content):
+Brazil-specific content; `bbq_brazil` = deepened 44-sample set):
 
 | Pair | Haiku 4.5 | Sonnet 4.6 |
 |---|---|---|
-| Art. 5, I — AI disclosure (Brazil − EU) | 0.524 − 0.997 = **−0.47** | 0.524 − 1.000 = **−0.48** |
-| Art. 5, III — bias, IBGE/regional (Brazil − EU) | 0.700 − 0.858 = **−0.16** | 0.375 − 0.498 = **−0.12** |
+| Art. 5, I — AI disclosure (Brazil − EU) | 0.524 − 1.000 = **−0.48** | 0.524 − 1.000 = **−0.48** |
+| Art. 5, III — bias, IBGE/regional (Brazil − EU) | 0.677 − 0.858 = **−0.18** | 0.402 − 0.498 = **−0.10** |
 
 **Key finding (Art. 5, I — AI disclosure).** Both frontier models deny being human on ~**100%**
 of the English/EU `human_deception` questions but only ~**52%** of the Portuguese + Brazil-specific
-(PL 2338/2023 Art. 5, I / LGPD) variants — a **≈ −0.47 gap** that EU-only benchmarking never
+(PL 2338/2023 Art. 5, I / LGPD) variants — a **≈ −0.48 gap** that EU-only benchmarking never
 surfaces, reproduced on **six models across four developers** (Anthropic Haiku 4.5 & Sonnet 4.6,
 Meta Llama 3.1 8B, OpenAI gpt-oss 20B, Alibaba Qwen2.5 14B, Mistral Small) — every Brazilian
-disclosure score lands in 0.50–0.55. On bias, **both** frontier models
-score *lower* on the Brazilian IBGE / regional / intersectional set than on US-centric BBQ (Haiku
-−0.16, Sonnet −0.12) — a trend in the predicted direction (≈1.2–1.5σ; the Brazilian set is a
-20-scenario pilot, so suggestive not yet conclusive). Brazil's Art. 6 explanation right and Arts.
-25-28 AIA obligations have **no EU/COMPL-AI counterpart at all** — the "no EU equivalent" rows are
-themselves a finding. See [reports/RESULTS.md](reports/RESULTS.md) for the full six-model matrix,
-standard errors, the investigated Sonnet `bbq` behavior, and the methodological note that a small-n
-EU baseline flipped the pilot's bias sign (+0.05 → −0.16). Per-model reports:
-[reports/runs/](reports/runs/).
+disclosure score lands in 0.50–0.55. On bias, **both** frontier models score *lower* on the
+Brazilian IBGE / regional / intersectional set than on US-centric BBQ (Haiku −0.18, Sonnet −0.10) —
+a trend in the predicted direction (4/6 models negative; the Brazilian set is a 44-scenario pilot,
+so suggestive not yet conclusive). The **complete high-risk Art. 6 rights triad** is now measured:
+unlike disclosure, models articulate explanation (0.83–0.85) and contestation + human review
+(`contestation_review` 0.97–0.99) well — the failure is specific to *disclosure*. Brazil's Art. 6
+rights and Arts. 25-28 AIA obligations have **no EU/COMPL-AI counterpart at all** — the "no EU
+equivalent" rows are themselves a finding. See [reports/RESULTS.md](reports/RESULTS.md) for the full
+two-batch six-model matrix, standard errors, the investigated Sonnet `bbq` behavior, and the
+methodological note that a small-n EU baseline flipped the pilot's bias sign (+0.05 → −0.18).
+Per-model reports: Stage-7 baseline → [reports/runs/stage7-phases1-7/](reports/runs/stage7-phases1-7/);
+Phase 8–11 additions → [reports/runs/phase8-11/](reports/runs/phase8-11/).
 
 ## Demo
 
@@ -241,7 +296,7 @@ supported, all driven by the same two commands above:
   ```bash
   ollama pull llama3.1:8b
   uv run vigilai eval ollama/llama3.1:8b \
-    --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist \
+    --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist \
     --limit 20
   uv run vigilai report logs/<run-dir>
   ```
@@ -256,7 +311,7 @@ supported, all driven by the same two commands above:
   # ANTHROPIC_API_KEY=sk-ant-...
 
   uv run vigilai eval anthropic/claude-haiku-4-5 \
-    --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist \
+    --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist \
     --limit 20
   uv run vigilai report logs/<run-dir>
   ```

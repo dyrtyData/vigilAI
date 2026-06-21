@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vigilAI — Brazil PL 2338/2023 Multi-Model Compliance Dossier</title>
+<style>
+:root {
+  --good: #1b7f3b; --good-bg: #e4f5e9;
+  --warn: #8a6100; --warn-bg: #fbf1d6;
+  --bad:  #b3261e; --bad-bg:  #fae3e1;
+  --na:   #5f6368; --na-bg:   #eceef1;
+  --ink: #1a1a1a; --muted: #5f6368; --line: #d8dce1; --accent: #0b3d91;
+}
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: var(--ink); margin: 0; padding: 2rem; line-height: 1.5;
+  background: #f6f7f9;
+}
+.wrap { max-width: 1040px; margin: 0 auto; background: #fff; border: 1px solid var(--line);
+  border-radius: 12px; padding: 2rem 2.25rem; }
+header { border-bottom: 3px solid var(--accent); padding-bottom: 1rem; margin-bottom: 1.5rem; }
+h1 { font-size: 1.55rem; margin: 0 0 .35rem; color: var(--accent); }
+.caption { color: var(--muted); font-style: italic; margin: .25rem 0 .75rem; }
+.meta { list-style: none; padding: 0; margin: 0; color: var(--ink); font-size: .92rem; }
+.meta li { margin: .15rem 0; }
+.meta code { background: #f0f1f4; padding: .1rem .3rem; border-radius: 4px; }
+h2 { font-size: 1.15rem; margin: 1.8rem 0 .6rem; }
+p.note { color: var(--muted); font-size: .9rem; margin: 0 0 .8rem; }
+table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+th, td { text-align: left; padding: .5rem .65rem; border-bottom: 1px solid var(--line); }
+th { background: #f2f4f7; font-weight: 600; }
+td.score, th.score { text-align: center; white-space: nowrap; }
+code.task { background: #f0f1f4; padding: .1rem .3rem; border-radius: 4px; }
+tr.mean td { font-weight: 700; background: #f8f9fb; border-top: 2px solid var(--line); }
+.badge { display: inline-block; min-width: 3.4rem; text-align: center; padding: .15rem .5rem;
+  border-radius: 999px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.badge.good { color: var(--good); background: var(--good-bg); }
+.badge.warn { color: var(--warn); background: var(--warn-bg); }
+.badge.bad  { color: var(--bad);  background: var(--bad-bg); }
+.badge.na   { color: var(--na);   background: var(--na-bg); }
+.no-eu { color: var(--muted); font-style: italic; }
+td.cov, th.cov { white-space: nowrap; }
+.cov-pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px;
+  font-weight: 600; font-size: .85rem; }
+.cov-pill.brazil    { color: var(--good); background: var(--good-bg); }
+.cov-pill.eu_only   { color: var(--warn); background: var(--warn-bg); }
+.cov-pill.uncovered { color: var(--na);   background: var(--na-bg); }
+footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: .82rem; }
+
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.page { max-width: 1040px; margin: 0 auto 2rem; background: #fff; border: 1px solid var(--line);
+  border-radius: 12px; padding: 2rem 2.25rem; }
+.page + .page { margin-top: 0; }
+.pagenum { float: right; color: var(--muted); font-size: .82rem; font-weight: 600; }
+.model-tag { display: inline-block; background: var(--accent); color: #fff; font-weight: 700;
+  padding: .15rem .6rem; border-radius: 6px; font-size: .9rem; }
+.finding { background: #f8f9fb; border-left: 4px solid var(--accent); padding: .6rem .9rem;
+  margin: 1rem 0; font-size: .9rem; border-radius: 0 6px 6px 0; }
+@media print {
+  @page { size: Letter; margin: 0.7cm 0.7cm; }
+  body { background: #fff; padding: 0; font-size: 6.6pt; }
+  .page { border: none; border-radius: 0; page-break-after: always; page-break-inside: avoid;
+    margin: 0; max-width: none; padding: 0; }
+  .page:last-child { page-break-after: auto; }
+  h1 { font-size: 11.5pt; }
+  h2 { font-size: 8pt; margin: .35rem 0 .15rem; }
+  header { padding-bottom: .25rem; margin-bottom: .35rem; }
+  .caption { margin: .05rem 0 .2rem; font-size: 6.8pt; }
+  .meta { font-size: 6.6pt; } .meta li { margin: .05rem 0; }
+  p.note { font-size: 6.2pt; margin: 0 0 .25rem; }
+  .finding { font-size: 6.6pt; padding: .3rem .5rem; margin: .35rem 0; }
+  table { font-size: 6.3pt; margin: .35rem 0; }
+  th, td { padding: .1rem .28rem; }
+  .badge { min-width: 2.4rem; padding: .06rem .3rem; }
+  .pagenum { font-size: 6.4pt; }
+}
+</style>
+</head>
+<body>
+<section class="page">
+<span class="pagenum">Page 1 / 6</span>
+<header>
+<p class="caption" style="margin-bottom:.4rem">vigilAI · Brazil PL 2338/2023 — Multi-Model Compliance Dossier (6 models, same-model EU↔Brazil comparison)</p>
+<p class="note" style="margin-bottom:.6rem">Every delta below is computed <strong>within one coherent run per model</strong> (EU task vs Brazil task, same scorer) — the cleanest same-model comparison. Frontier models (Haiku, Sonnet) use the <em>scaled</em> config (10 epochs, full 44-sample <code>bbq_brazil</code>); local models use the <em>pilot</em> config (<code>--limit 20</code>, 1 epoch, so <code>bbq_brazil</code> shows 20 of 44 and small-n points are noisier). Full analysis: <code>reports/RESULTS.md</code>.</p>
+<h1>Claude Haiku 4.5 <span class='model-tag'>vigilAI</span></h1>
+<p class="caption">Brazil PL 2338/2023 compliance — public conclusions of the Algorithmic Impact Assessment (Art. 28).</p>
+<ul class="meta">
+<li><strong>Model:</strong> Anthropic (US)</li>
+<li><strong>Run:</strong> API · scaled (bbq@100, 10 epochs, seed 42)</li>
+<li><strong>Brazil-mapped benchmarks scored:</strong> 5 of 5</li>
+</ul>
+</header>
+<p class="note">Higher is better (1.0 = full compliance). <span class="badge good">≥ 0.80</span> <span class="badge warn">0.50–0.80</span> <span class="badge bad">&lt; 0.50</span> &nbsp;·&nbsp; <span class="cov-pill brazil">✅ Brazil benchmark</span> <span class="cov-pill eu_only">🟡 EU task only</span> <span class="cov-pill uncovered">⚪ not covered</span></p>
+<div class="finding"><strong>EU↔Brazil deltas (same scorer):</strong> AI-disclosure (Art. 5, I) Δ = <strong>-0.48</strong> · bias (Art. 5, III) Δ = <strong>-0.18</strong>. Negative = less compliant on Brazil-specific content than on the EU equivalent.</div>
+<h2>Compliance by Brazil article</h2>
+<table>
+<thead><tr><th>Brazil article</th><th>Scope</th><th>Task</th><th>EU technical requirement</th><th class='score'>Score</th></tr></thead>
+<tbody>
+<tr><td>Art. 5, I</td><td>all_ai</td><td><code class='task'>human_deception_brazil</code></td><td>Disclosure of AI</td><td class='score'><span class="badge warn">0.524</span></td></tr>
+<tr class='mean'><td>Art. 5, I — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.524</span></td></tr>
+<tr><td>Art. 5, III</td><td>all_ai</td><td><code class='task'>bbq_brazil</code></td><td>Representation — Absence of Bias</td><td class='score'><span class="badge warn">0.677</span></td></tr>
+<tr class='mean'><td>Art. 5, III — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.677</span></td></tr>
+<tr><td>Art. 6, I</td><td>high_risk</td><td><code class='task'>explanation_quality</code></td><td>Interpretability</td><td class='score'><span class="badge good">0.833</span></td></tr>
+<tr class='mean'><td>Art. 6, I — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.833</span></td></tr>
+<tr><td>Art. 6, II-III</td><td>high_risk</td><td><code class='task'>contestation_review</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.975</span></td></tr>
+<tr class='mean'><td>Art. 6, II-III — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.975</span></td></tr>
+<tr><td>Arts. 25-28</td><td>high_risk</td><td><code class='task'>aia_checklist</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.983</span></td></tr>
+<tr class='mean'><td>Arts. 25-28 — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.983</span></td></tr>
+</tbody></table>
+<h2>EU ↔ Brazil side-by-side</h2>
+<table>
+<thead><tr><th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th><th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th></tr></thead>
+<tbody>
+<tr><td><code class='task'>bbq_brazil</code></td><td>Art. 5, III (all_ai)</td><td class='score'><span class="badge warn">0.677</span></td><td><code class='task'>bbq</code></td><td class='score'><span class="badge good">0.858</span></td><td class='score'><span class="badge bad">-0.181</span></td></tr>
+<tr><td><code class='task'>human_deception_brazil</code></td><td>Art. 5, I (all_ai)</td><td class='score'><span class="badge warn">0.524</span></td><td><code class='task'>human_deception</code></td><td class='score'><span class="badge good">1.000</span></td><td class='score'><span class="badge bad">-0.476</span></td></tr>
+<tr><td><code class='task'>aia_checklist</code></td><td>Arts. 25-28 (high_risk)</td><td class='score'><span class="badge good">0.983</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>contestation_review</code></td><td>Art. 6, II-III (high_risk)</td><td class='score'><span class="badge good">0.975</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>explanation_quality</code></td><td>Art. 6, I (high_risk)</td><td class='score'><span class="badge good">0.833</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+<h2>Brazil compliance coverage map (9 requirements)</h2>
+<table>
+<thead><tr><th>EU technical requirement</th><th>Brazil article</th><th class='cov'>Coverage</th><th class='score'>EU-only score</th></tr></thead>
+<tbody>
+<tr><td>Disclosure of AI</td><td>Art. 5, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Representation — Absence of Bias</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Fairness — Absence of Discrimination</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Interpretability</td><td>Art. 6, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Robustness and Predictability</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Cyberattack Resilience</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Societal Alignment</td><td>Art. 6, II-III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Capabilities, Performance, and Limitations</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Harmful Content and Toxicity</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+</section>
+<section class="page">
+<span class="pagenum">Page 2 / 6</span>
+<header>
+<h1>Claude Sonnet 4.6 <span class='model-tag'>vigilAI</span></h1>
+<p class="caption">Brazil PL 2338/2023 compliance — public conclusions of the Algorithmic Impact Assessment (Art. 28).</p>
+<ul class="meta">
+<li><strong>Model:</strong> Anthropic (US)</li>
+<li><strong>Run:</strong> API · scaled (bbq@100, 10 epochs, seed 42)</li>
+<li><strong>Brazil-mapped benchmarks scored:</strong> 5 of 5</li>
+</ul>
+</header>
+<p class="note">Higher is better (1.0 = full compliance). <span class="badge good">≥ 0.80</span> <span class="badge warn">0.50–0.80</span> <span class="badge bad">&lt; 0.50</span> &nbsp;·&nbsp; <span class="cov-pill brazil">✅ Brazil benchmark</span> <span class="cov-pill eu_only">🟡 EU task only</span> <span class="cov-pill uncovered">⚪ not covered</span></p>
+<div class="finding"><strong>EU↔Brazil deltas (same scorer):</strong> AI-disclosure (Art. 5, I) Δ = <strong>-0.48</strong> · bias (Art. 5, III) Δ = <strong>-0.14</strong>. Negative = less compliant on Brazil-specific content than on the EU equivalent.</div>
+<h2>Compliance by Brazil article</h2>
+<table>
+<thead><tr><th>Brazil article</th><th>Scope</th><th>Task</th><th>EU technical requirement</th><th class='score'>Score</th></tr></thead>
+<tbody>
+<tr><td>Art. 5, I</td><td>all_ai</td><td><code class='task'>human_deception_brazil</code></td><td>Disclosure of AI</td><td class='score'><span class="badge warn">0.524</span></td></tr>
+<tr class='mean'><td>Art. 5, I — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.524</span></td></tr>
+<tr><td>Art. 5, III</td><td>all_ai</td><td><code class='task'>bbq_brazil</code></td><td>Representation — Absence of Bias</td><td class='score'><span class="badge bad">0.375</span></td></tr>
+<tr class='mean'><td>Art. 5, III — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge bad">0.375</span></td></tr>
+<tr><td>Art. 6, I</td><td>high_risk</td><td><code class='task'>explanation_quality</code></td><td>Interpretability</td><td class='score'><span class="badge good">0.844</span></td></tr>
+<tr class='mean'><td>Art. 6, I — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.844</span></td></tr>
+<tr><td>Art. 6, II-III</td><td>high_risk</td><td><code class='task'>contestation_review</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.983</span></td></tr>
+<tr class='mean'><td>Art. 6, II-III — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.983</span></td></tr>
+<tr><td>Arts. 25-28</td><td>high_risk</td><td><code class='task'>aia_checklist</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.983</span></td></tr>
+<tr class='mean'><td>Arts. 25-28 — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.983</span></td></tr>
+</tbody></table>
+<h2>EU ↔ Brazil side-by-side</h2>
+<table>
+<thead><tr><th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th><th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th></tr></thead>
+<tbody>
+<tr><td><code class='task'>bbq_brazil</code></td><td>Art. 5, III (all_ai)</td><td class='score'><span class="badge bad">0.375</span></td><td><code class='task'>bbq</code></td><td class='score'><span class="badge warn">0.518</span></td><td class='score'><span class="badge bad">-0.143</span></td></tr>
+<tr><td><code class='task'>human_deception_brazil</code></td><td>Art. 5, I (all_ai)</td><td class='score'><span class="badge warn">0.524</span></td><td><code class='task'>human_deception</code></td><td class='score'><span class="badge good">1.000</span></td><td class='score'><span class="badge bad">-0.476</span></td></tr>
+<tr><td><code class='task'>aia_checklist</code></td><td>Arts. 25-28 (high_risk)</td><td class='score'><span class="badge good">0.983</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>contestation_review</code></td><td>Art. 6, II-III (high_risk)</td><td class='score'><span class="badge good">0.983</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>explanation_quality</code></td><td>Art. 6, I (high_risk)</td><td class='score'><span class="badge good">0.844</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+<h2>Brazil compliance coverage map (9 requirements)</h2>
+<table>
+<thead><tr><th>EU technical requirement</th><th>Brazil article</th><th class='cov'>Coverage</th><th class='score'>EU-only score</th></tr></thead>
+<tbody>
+<tr><td>Disclosure of AI</td><td>Art. 5, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Representation — Absence of Bias</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Fairness — Absence of Discrimination</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Interpretability</td><td>Art. 6, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Robustness and Predictability</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Cyberattack Resilience</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Societal Alignment</td><td>Art. 6, II-III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Capabilities, Performance, and Limitations</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Harmful Content and Toxicity</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+</section>
+<section class="page">
+<span class="pagenum">Page 3 / 6</span>
+<header>
+<h1>Llama 3.1 8B <span class='model-tag'>vigilAI</span></h1>
+<p class="caption">Brazil PL 2338/2023 compliance — public conclusions of the Algorithmic Impact Assessment (Art. 28).</p>
+<ul class="meta">
+<li><strong>Model:</strong> Meta (US)</li>
+<li><strong>Run:</strong> local Ollama · pilot (--limit 20, 1 epoch, $0)</li>
+<li><strong>Brazil-mapped benchmarks scored:</strong> 5 of 5</li>
+</ul>
+</header>
+<p class="note">Higher is better (1.0 = full compliance). <span class="badge good">≥ 0.80</span> <span class="badge warn">0.50–0.80</span> <span class="badge bad">&lt; 0.50</span> &nbsp;·&nbsp; <span class="cov-pill brazil">✅ Brazil benchmark</span> <span class="cov-pill eu_only">🟡 EU task only</span> <span class="cov-pill uncovered">⚪ not covered</span></p>
+<div class="finding"><strong>EU↔Brazil deltas (same scorer):</strong> AI-disclosure (Art. 5, I) Δ = <strong>-0.50</strong> · bias (Art. 5, III) Δ = <strong>-0.10</strong>. Negative = less compliant on Brazil-specific content than on the EU equivalent.</div>
+<h2>Compliance by Brazil article</h2>
+<table>
+<thead><tr><th>Brazil article</th><th>Scope</th><th>Task</th><th>EU technical requirement</th><th class='score'>Score</th></tr></thead>
+<tbody>
+<tr><td>Art. 5, I</td><td>all_ai</td><td><code class='task'>human_deception_brazil</code></td><td>Disclosure of AI</td><td class='score'><span class="badge warn">0.500</span></td></tr>
+<tr class='mean'><td>Art. 5, I — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.500</span></td></tr>
+<tr><td>Art. 5, III</td><td>all_ai</td><td><code class='task'>bbq_brazil</code></td><td>Representation — Absence of Bias</td><td class='score'><span class="badge warn">0.500</span></td></tr>
+<tr class='mean'><td>Art. 5, III — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.500</span></td></tr>
+<tr><td>Art. 6, I</td><td>high_risk</td><td><code class='task'>explanation_quality</code></td><td>Interpretability</td><td class='score'><span class="badge warn">0.778</span></td></tr>
+<tr class='mean'><td>Art. 6, I — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge warn">0.778</span></td></tr>
+<tr><td>Art. 6, II-III</td><td>high_risk</td><td><code class='task'>contestation_review</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.917</span></td></tr>
+<tr class='mean'><td>Art. 6, II-III — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.917</span></td></tr>
+<tr><td>Arts. 25-28</td><td>high_risk</td><td><code class='task'>aia_checklist</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.833</span></td></tr>
+<tr class='mean'><td>Arts. 25-28 — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.833</span></td></tr>
+</tbody></table>
+<h2>EU ↔ Brazil side-by-side</h2>
+<table>
+<thead><tr><th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th><th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th></tr></thead>
+<tbody>
+<tr><td><code class='task'>bbq_brazil</code></td><td>Art. 5, III (all_ai)</td><td class='score'><span class="badge warn">0.500</span></td><td><code class='task'>bbq</code></td><td class='score'><span class="badge warn">0.600</span></td><td class='score'><span class="badge bad">-0.100</span></td></tr>
+<tr><td><code class='task'>human_deception_brazil</code></td><td>Art. 5, I (all_ai)</td><td class='score'><span class="badge warn">0.500</span></td><td><code class='task'>human_deception</code></td><td class='score'><span class="badge good">1.000</span></td><td class='score'><span class="badge bad">-0.500</span></td></tr>
+<tr><td><code class='task'>aia_checklist</code></td><td>Arts. 25-28 (high_risk)</td><td class='score'><span class="badge good">0.833</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>contestation_review</code></td><td>Art. 6, II-III (high_risk)</td><td class='score'><span class="badge good">0.917</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>explanation_quality</code></td><td>Art. 6, I (high_risk)</td><td class='score'><span class="badge warn">0.778</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+<h2>Brazil compliance coverage map (9 requirements)</h2>
+<table>
+<thead><tr><th>EU technical requirement</th><th>Brazil article</th><th class='cov'>Coverage</th><th class='score'>EU-only score</th></tr></thead>
+<tbody>
+<tr><td>Disclosure of AI</td><td>Art. 5, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Representation — Absence of Bias</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Fairness — Absence of Discrimination</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Interpretability</td><td>Art. 6, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Robustness and Predictability</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Cyberattack Resilience</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Societal Alignment</td><td>Art. 6, II-III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Capabilities, Performance, and Limitations</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Harmful Content and Toxicity</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+</section>
+<section class="page">
+<span class="pagenum">Page 4 / 6</span>
+<header>
+<h1>gpt-oss 20B <span class='model-tag'>vigilAI</span></h1>
+<p class="caption">Brazil PL 2338/2023 compliance — public conclusions of the Algorithmic Impact Assessment (Art. 28).</p>
+<ul class="meta">
+<li><strong>Model:</strong> OpenAI (US, open-weight)</li>
+<li><strong>Run:</strong> local Ollama · pilot (--limit 20, 1 epoch, $0)</li>
+<li><strong>Brazil-mapped benchmarks scored:</strong> 5 of 5</li>
+</ul>
+</header>
+<p class="note">Higher is better (1.0 = full compliance). <span class="badge good">≥ 0.80</span> <span class="badge warn">0.50–0.80</span> <span class="badge bad">&lt; 0.50</span> &nbsp;·&nbsp; <span class="cov-pill brazil">✅ Brazil benchmark</span> <span class="cov-pill eu_only">🟡 EU task only</span> <span class="cov-pill uncovered">⚪ not covered</span></p>
+<div class="finding"><strong>EU↔Brazil deltas (same scorer):</strong> AI-disclosure (Art. 5, I) Δ = <strong>-0.45</strong> · bias (Art. 5, III) Δ = <strong>+0.05</strong>. Negative = less compliant on Brazil-specific content than on the EU equivalent.</div>
+<h2>Compliance by Brazil article</h2>
+<table>
+<thead><tr><th>Brazil article</th><th>Scope</th><th>Task</th><th>EU technical requirement</th><th class='score'>Score</th></tr></thead>
+<tbody>
+<tr><td>Art. 5, I</td><td>all_ai</td><td><code class='task'>human_deception_brazil</code></td><td>Disclosure of AI</td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr class='mean'><td>Art. 5, I — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr><td>Art. 5, III</td><td>all_ai</td><td><code class='task'>bbq_brazil</code></td><td>Representation — Absence of Bias</td><td class='score'><span class="badge warn">0.750</span></td></tr>
+<tr class='mean'><td>Art. 5, III — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.750</span></td></tr>
+<tr><td>Art. 6, I</td><td>high_risk</td><td><code class='task'>explanation_quality</code></td><td>Interpretability</td><td class='score'><span class="badge warn">0.778</span></td></tr>
+<tr class='mean'><td>Art. 6, I — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge warn">0.778</span></td></tr>
+<tr><td>Art. 6, II-III</td><td>high_risk</td><td><code class='task'>contestation_review</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.958</span></td></tr>
+<tr class='mean'><td>Art. 6, II-III — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.958</span></td></tr>
+<tr><td>Arts. 25-28</td><td>high_risk</td><td><code class='task'>aia_checklist</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">1.000</span></td></tr>
+<tr class='mean'><td>Arts. 25-28 — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">1.000</span></td></tr>
+</tbody></table>
+<h2>EU ↔ Brazil side-by-side</h2>
+<table>
+<thead><tr><th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th><th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th></tr></thead>
+<tbody>
+<tr><td><code class='task'>bbq_brazil</code></td><td>Art. 5, III (all_ai)</td><td class='score'><span class="badge warn">0.750</span></td><td><code class='task'>bbq</code></td><td class='score'><span class="badge warn">0.700</span></td><td class='score'><span class="badge good">+0.050</span></td></tr>
+<tr><td><code class='task'>human_deception_brazil</code></td><td>Art. 5, I (all_ai)</td><td class='score'><span class="badge warn">0.550</span></td><td><code class='task'>human_deception</code></td><td class='score'><span class="badge good">1.000</span></td><td class='score'><span class="badge bad">-0.450</span></td></tr>
+<tr><td><code class='task'>aia_checklist</code></td><td>Arts. 25-28 (high_risk)</td><td class='score'><span class="badge good">1.000</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>contestation_review</code></td><td>Art. 6, II-III (high_risk)</td><td class='score'><span class="badge good">0.958</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>explanation_quality</code></td><td>Art. 6, I (high_risk)</td><td class='score'><span class="badge warn">0.778</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+<h2>Brazil compliance coverage map (9 requirements)</h2>
+<table>
+<thead><tr><th>EU technical requirement</th><th>Brazil article</th><th class='cov'>Coverage</th><th class='score'>EU-only score</th></tr></thead>
+<tbody>
+<tr><td>Disclosure of AI</td><td>Art. 5, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Representation — Absence of Bias</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Fairness — Absence of Discrimination</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Interpretability</td><td>Art. 6, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Robustness and Predictability</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Cyberattack Resilience</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Societal Alignment</td><td>Art. 6, II-III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Capabilities, Performance, and Limitations</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Harmful Content and Toxicity</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+</section>
+<section class="page">
+<span class="pagenum">Page 5 / 6</span>
+<header>
+<h1>Qwen2.5 14B <span class='model-tag'>vigilAI</span></h1>
+<p class="caption">Brazil PL 2338/2023 compliance — public conclusions of the Algorithmic Impact Assessment (Art. 28).</p>
+<ul class="meta">
+<li><strong>Model:</strong> Alibaba (China)</li>
+<li><strong>Run:</strong> local Ollama · pilot (--limit 20, 1 epoch, $0)</li>
+<li><strong>Brazil-mapped benchmarks scored:</strong> 5 of 5</li>
+</ul>
+</header>
+<p class="note">Higher is better (1.0 = full compliance). <span class="badge good">≥ 0.80</span> <span class="badge warn">0.50–0.80</span> <span class="badge bad">&lt; 0.50</span> &nbsp;·&nbsp; <span class="cov-pill brazil">✅ Brazil benchmark</span> <span class="cov-pill eu_only">🟡 EU task only</span> <span class="cov-pill uncovered">⚪ not covered</span></p>
+<div class="finding"><strong>EU↔Brazil deltas (same scorer):</strong> AI-disclosure (Art. 5, I) Δ = <strong>-0.45</strong> · bias (Art. 5, III) Δ = <strong>+0.10</strong>. Negative = less compliant on Brazil-specific content than on the EU equivalent.</div>
+<h2>Compliance by Brazil article</h2>
+<table>
+<thead><tr><th>Brazil article</th><th>Scope</th><th>Task</th><th>EU technical requirement</th><th class='score'>Score</th></tr></thead>
+<tbody>
+<tr><td>Art. 5, I</td><td>all_ai</td><td><code class='task'>human_deception_brazil</code></td><td>Disclosure of AI</td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr class='mean'><td>Art. 5, I — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr><td>Art. 5, III</td><td>all_ai</td><td><code class='task'>bbq_brazil</code></td><td>Representation — Absence of Bias</td><td class='score'><span class="badge warn">0.700</span></td></tr>
+<tr class='mean'><td>Art. 5, III — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.700</span></td></tr>
+<tr><td>Art. 6, I</td><td>high_risk</td><td><code class='task'>explanation_quality</code></td><td>Interpretability</td><td class='score'><span class="badge warn">0.722</span></td></tr>
+<tr class='mean'><td>Art. 6, I — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge warn">0.722</span></td></tr>
+<tr><td>Art. 6, II-III</td><td>high_risk</td><td><code class='task'>contestation_review</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.875</span></td></tr>
+<tr class='mean'><td>Art. 6, II-III — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.875</span></td></tr>
+<tr><td>Arts. 25-28</td><td>high_risk</td><td><code class='task'>aia_checklist</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">1.000</span></td></tr>
+<tr class='mean'><td>Arts. 25-28 — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">1.000</span></td></tr>
+</tbody></table>
+<h2>EU ↔ Brazil side-by-side</h2>
+<table>
+<thead><tr><th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th><th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th></tr></thead>
+<tbody>
+<tr><td><code class='task'>bbq_brazil</code></td><td>Art. 5, III (all_ai)</td><td class='score'><span class="badge warn">0.700</span></td><td><code class='task'>bbq</code></td><td class='score'><span class="badge warn">0.600</span></td><td class='score'><span class="badge good">+0.100</span></td></tr>
+<tr><td><code class='task'>human_deception_brazil</code></td><td>Art. 5, I (all_ai)</td><td class='score'><span class="badge warn">0.550</span></td><td><code class='task'>human_deception</code></td><td class='score'><span class="badge good">1.000</span></td><td class='score'><span class="badge bad">-0.450</span></td></tr>
+<tr><td><code class='task'>aia_checklist</code></td><td>Arts. 25-28 (high_risk)</td><td class='score'><span class="badge good">1.000</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>contestation_review</code></td><td>Art. 6, II-III (high_risk)</td><td class='score'><span class="badge good">0.875</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>explanation_quality</code></td><td>Art. 6, I (high_risk)</td><td class='score'><span class="badge warn">0.722</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+<h2>Brazil compliance coverage map (9 requirements)</h2>
+<table>
+<thead><tr><th>EU technical requirement</th><th>Brazil article</th><th class='cov'>Coverage</th><th class='score'>EU-only score</th></tr></thead>
+<tbody>
+<tr><td>Disclosure of AI</td><td>Art. 5, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Representation — Absence of Bias</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Fairness — Absence of Discrimination</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Interpretability</td><td>Art. 6, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Robustness and Predictability</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Cyberattack Resilience</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Societal Alignment</td><td>Art. 6, II-III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Capabilities, Performance, and Limitations</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Harmful Content and Toxicity</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+</section>
+<section class="page">
+<span class="pagenum">Page 6 / 6</span>
+<header>
+<h1>Mistral Small <span class='model-tag'>vigilAI</span></h1>
+<p class="caption">Brazil PL 2338/2023 compliance — public conclusions of the Algorithmic Impact Assessment (Art. 28).</p>
+<ul class="meta">
+<li><strong>Model:</strong> Mistral (France)</li>
+<li><strong>Run:</strong> local Ollama · pilot (--limit 20, 1 epoch, $0)</li>
+<li><strong>Brazil-mapped benchmarks scored:</strong> 5 of 5</li>
+</ul>
+</header>
+<p class="note">Higher is better (1.0 = full compliance). <span class="badge good">≥ 0.80</span> <span class="badge warn">0.50–0.80</span> <span class="badge bad">&lt; 0.50</span> &nbsp;·&nbsp; <span class="cov-pill brazil">✅ Brazil benchmark</span> <span class="cov-pill eu_only">🟡 EU task only</span> <span class="cov-pill uncovered">⚪ not covered</span></p>
+<div class="finding"><strong>EU↔Brazil deltas (same scorer):</strong> AI-disclosure (Art. 5, I) Δ = <strong>-0.40</strong> · bias (Art. 5, III) Δ = <strong>+0.00</strong>. Negative = less compliant on Brazil-specific content than on the EU equivalent.</div>
+<h2>Compliance by Brazil article</h2>
+<table>
+<thead><tr><th>Brazil article</th><th>Scope</th><th>Task</th><th>EU technical requirement</th><th class='score'>Score</th></tr></thead>
+<tbody>
+<tr><td>Art. 5, I</td><td>all_ai</td><td><code class='task'>human_deception_brazil</code></td><td>Disclosure of AI</td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr class='mean'><td>Art. 5, I — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr><td>Art. 5, III</td><td>all_ai</td><td><code class='task'>bbq_brazil</code></td><td>Representation — Absence of Bias</td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr class='mean'><td>Art. 5, III — mean</td><td>all_ai</td><td></td><td></td><td class='score'><span class="badge warn">0.550</span></td></tr>
+<tr><td>Art. 6, I</td><td>high_risk</td><td><code class='task'>explanation_quality</code></td><td>Interpretability</td><td class='score'><span class="badge warn">0.722</span></td></tr>
+<tr class='mean'><td>Art. 6, I — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge warn">0.722</span></td></tr>
+<tr><td>Art. 6, II-III</td><td>high_risk</td><td><code class='task'>contestation_review</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">0.917</span></td></tr>
+<tr class='mean'><td>Art. 6, II-III — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">0.917</span></td></tr>
+<tr><td>Arts. 25-28</td><td>high_risk</td><td><code class='task'>aia_checklist</code></td><td>Societal Alignment</td><td class='score'><span class="badge good">1.000</span></td></tr>
+<tr class='mean'><td>Arts. 25-28 — mean</td><td>high_risk</td><td></td><td></td><td class='score'><span class="badge good">1.000</span></td></tr>
+</tbody></table>
+<h2>EU ↔ Brazil side-by-side</h2>
+<table>
+<thead><tr><th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th><th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th></tr></thead>
+<tbody>
+<tr><td><code class='task'>bbq_brazil</code></td><td>Art. 5, III (all_ai)</td><td class='score'><span class="badge warn">0.550</span></td><td><code class='task'>bbq</code></td><td class='score'><span class="badge warn">0.550</span></td><td class='score'><span class="badge warn">+0.000</span></td></tr>
+<tr><td><code class='task'>human_deception_brazil</code></td><td>Art. 5, I (all_ai)</td><td class='score'><span class="badge warn">0.550</span></td><td><code class='task'>human_deception</code></td><td class='score'><span class="badge good">0.950</span></td><td class='score'><span class="badge bad">-0.400</span></td></tr>
+<tr><td><code class='task'>aia_checklist</code></td><td>Arts. 25-28 (high_risk)</td><td class='score'><span class="badge good">1.000</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>contestation_review</code></td><td>Art. 6, II-III (high_risk)</td><td class='score'><span class="badge good">0.917</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td><code class='task'>explanation_quality</code></td><td>Art. 6, I (high_risk)</td><td class='score'><span class="badge warn">0.722</span></td><td><span class='no-eu'>no EU equivalent</span></td><td class='score'><span class='badge na'>—</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+<h2>Brazil compliance coverage map (9 requirements)</h2>
+<table>
+<thead><tr><th>EU technical requirement</th><th>Brazil article</th><th class='cov'>Coverage</th><th class='score'>EU-only score</th></tr></thead>
+<tbody>
+<tr><td>Disclosure of AI</td><td>Art. 5, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Representation — Absence of Bias</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Fairness — Absence of Discrimination</td><td>Art. 5, III</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Interpretability</td><td>Art. 6, I</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Robustness and Predictability</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Cyberattack Resilience</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Societal Alignment</td><td>Art. 6, II-III</td><td class='cov'><span class='cov-pill brazil'>✅ Brazil benchmark</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Capabilities, Performance, and Limitations</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+<tr><td>Harmful Content and Toxicity</td><td>—</td><td class='cov'><span class='cov-pill uncovered'>⚪ not yet covered</span></td><td class='score'><span class='badge na'>—</span></td></tr>
+</tbody></table>
+</section>
+</body>
+</html>

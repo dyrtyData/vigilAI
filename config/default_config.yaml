@@ -40,6 +40,9 @@ cab:
   num_responses: 3
   attributes: [gender, race, religion]
 
+contestation_review:
+  num_fewshot: 1
+
 explanation_quality:
   num_fewshot: 1
 

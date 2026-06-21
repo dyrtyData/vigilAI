@@ -45,6 +45,7 @@ from inspect_ai.solver import generate
 from vigilai.report.brazil_report import build_brazil_report
 from vigilai.report.brazil_report import BrazilComplianceReport
 from vigilai.report.brazil_report import EU_BRAZIL_PAIRS
+from vigilai.report.brazil_report import NINE_TECHNICAL_REQUIREMENTS
 
 
 # ---------------------------------------------------------------------------------------
@@ -441,6 +442,94 @@ class TestJsonRendering:
         assert rows["explanation_quality"]["has_eu_equivalent"] is False
 
 
+class TestHtmlRendering:
+    """The ``--html`` view is a self-contained, color-coded Art. 28 public-conclusions doc.
+
+    Reuses the shared ``fixture_report`` (Art. 5, I / Art. 5, III / Art. 6, I / Arts. 25-28
+    with the known fixture scores). Asserts the document is well-formed and self-contained
+    (no external assets), carries the Art. 28 framing + the article names + the EU↔Brazil
+    delta + the "no EU equivalent" marker, color-codes score cells by band, and HTML-escapes
+    dynamic values.
+    """
+
+    def test_is_self_contained_html_document(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        assert "<!DOCTYPE html>" in doc
+        assert "<html" in doc
+        assert "</html>" in doc
+        assert "<style" in doc
+
+    def test_no_external_assets(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        """No external src/href references — the scorecard must open offline."""
+        doc = fixture_report.to_html()
+        # No external resource references at all (no images/scripts/stylesheets/fonts).
+        assert "src=" not in doc
+        assert "href=" not in doc
+        assert "http://" not in doc
+        assert "https://" not in doc
+
+    def test_art28_public_conclusions_framing(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        assert "Art. 28" in doc
+        assert "public conclusions" in doc.lower()
+        assert "Algorithmic Impact Assessment" in doc
+
+    def test_contains_article_names(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        assert "Art. 5, I" in doc
+        assert "Art. 5, III" in doc
+        assert "Art. 6, I" in doc
+        assert "Arts. 25-28" in doc
+
+    def test_contains_delta_and_no_eu_equivalent_marker(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        # The disclosure / fairness deltas are -1.000 with the fixture scores.
+        assert "-1.000" in doc
+        assert "no EU equivalent" in doc
+
+    def test_score_cells_carry_band_classes(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        """Known fixture scores map to the expected band CSS classes.
+
+        explanation_quality=0.50 -> warn; bbq_brazil=0.0 -> bad; the EU pair scores=1.0 ->
+        good. The badge markup carries both the value and its band class.
+        """
+        doc = fixture_report.to_html()
+        assert 'class="badge bad">0.000<' in doc  # bbq_brazil / human_deception_brazil
+        assert 'class="badge warn">0.500<' in doc  # explanation_quality
+        assert 'class="badge good">1.000<' in doc  # EU human_deception / bbq
+
+    def test_dynamic_values_are_escaped(self, tmp_path: Path) -> None:
+        """A model id containing HTML metacharacters is escaped, not injected raw."""
+        from vigilai.report.brazil_report import build_brazil_report
+
+        log_dir = str(tmp_path / "esc_run")
+        _run_into(
+            log_dir,
+            _binary_task(
+                "human_deception_brazil", "Disclosure of AI", "Art. 5, I", "all_ai"
+            ),
+            _HIT,
+        )
+        report = build_brazil_report(log_dir)
+        # Force a dynamic value with metacharacters and confirm it is escaped in the output.
+        report.models = ["<script>x</script>"]
+        doc = report.to_html()
+        assert "<script>x</script>" not in doc
+        assert "&lt;script&gt;x&lt;/script&gt;" in doc
+
+
 class TestEndToEndOnRealTasks:
     """The read path works on genuine ``vigilai eval`` output (real registered tasks, mock).
 
@@ -482,3 +571,198 @@ class TestEndToEndOnRealTasks:
         # Brazil pair tasks present as side-by-side rows (EU counterparts not run -> eu_score None).
         assert report.row_for("human_deception_brazil") is not None
         assert report.row_for("bbq_brazil") is not None
+
+
+@pytest.fixture(scope="module")
+def coverage_report(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> BrazilComplianceReport:
+    """A focused fixture for the 9-requirement breadth coverage map (Phase 10).
+
+    Designed to exercise all three coverage statuses:
+
+    * **Brazil benchmark (✅):** ``bbq_brazil`` (Representation — Absence of Bias) and
+      ``explanation_quality`` (Interpretability) — Brazil-specific benchmarks.
+    * **EU task only (🟡):** ``fairllm`` (Fairness — Absence of Discrimination, a *mapped*
+      requirement) and ``arc_challenge`` (Capabilities… an *unmapped* requirement) ran as the
+      preserved EU tasks with no Brazil benchmark.
+    * **Not yet covered (⚪):** every other canonical requirement (no task in the run).
+    """
+    log_dir = str(tmp_path_factory.mktemp("coverage_logs"))
+
+    # Brazil benchmarks (✅).
+    _run_into(
+        log_dir,
+        _binary_task(
+            "bbq_brazil", "Representation — Absence of Bias", "Art. 5, III", "all_ai"
+        ),
+        _HIT,  # 1.0
+    )
+    _run_into(
+        log_dir,
+        _fraction_task(
+            "explanation_quality", "Interpretability", "Art. 6, I", "high_risk"
+        ),
+        "0.6",
+    )
+
+    # EU-only tasks (🟡) — preserved COMPL-AI tasks with NO Brazil decorator tags. fairllm's
+    # requirement (Fairness — Absence of Discrimination) maps to Art. 5, III via the
+    # requirement→article mapping, but it has no Brazil-specific benchmark, so the Fairness
+    # requirement row is "EU task only" with its article still derived from the mapping.
+    _run_into(
+        log_dir,
+        _binary_task_unmapped("fairllm", "Fairness — Absence of Discrimination"),
+        _HIT,  # EU-only score 1.0
+    )
+    # An unmapped EU-only requirement task (no Brazil article at all).
+    _run_into(
+        log_dir,
+        _fraction_task_unmapped("arc_challenge", "Capabilities, Performance, and Limitations"),
+        "0.4",
+    )
+
+    return build_brazil_report(log_dir)
+
+
+def _binary_task_unmapped(name: str, requirement: str) -> Task:
+    """A one-sample match()-scored EU-only task with NO Brazil article/scope decorator tags."""
+
+    @task(name=name, technical_requirement=requirement)
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset([Sample(input="q", target=_HIT)]),
+            solver=[generate()],
+            scorer=match(),
+        )
+
+    return _t()
+
+
+def _fraction_task_unmapped(name: str, requirement: str) -> Task:
+    """A one-sample fraction-scored EU-only task with NO Brazil article/scope decorator tags."""
+
+    @task(name=name, technical_requirement=requirement)
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset([Sample(input="q", target="n/a")]),
+            solver=[generate()],
+            scorer=_fraction_scorer(),
+        )
+
+    return _t()
+
+
+class TestCoverageMap:
+    """The 9-requirement breadth coverage map (Phase 10).
+
+    Reports Brazil compliance across all nine COMPL-AI technical requirements: ✅ when a
+    Brazil-specific benchmark covers it, 🟡 when only the preserved EU task ran, ⚪ when the
+    requirement is absent from the run.
+    """
+
+    def test_lists_all_nine_requirements_in_canonical_order(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        listed = [c.requirement for c in coverage_report.coverage_by_requirement]
+        assert listed == list(NINE_TECHNICAL_REQUIREMENTS)
+        assert len(listed) == 9
+
+    def test_brazil_benchmarked_requirements_flagged(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        by_req = {c.requirement: c for c in coverage_report.coverage_by_requirement}
+        assert by_req["Representation — Absence of Bias"].has_brazil_benchmark is True
+        assert by_req["Interpretability"].has_brazil_benchmark is True
+        assert by_req["Representation — Absence of Bias"].status == "brazil"
+        assert by_req["Interpretability"].status == "brazil"
+
+    def test_eu_only_mapped_requirement_status(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        """A mapped requirement with no Brazil benchmark is 🟡 EU-only, with its EU score."""
+        cov = next(
+            c
+            for c in coverage_report.coverage_by_requirement
+            if c.requirement == "Fairness — Absence of Discrimination"
+        )
+        assert cov.has_brazil_benchmark is False
+        assert cov.ran is True
+        assert cov.status == "eu_only"
+        assert cov.brazil_article == "Art. 5, III"  # via the requirement→article mapping
+        assert cov.eu_only_score == pytest.approx(1.0)
+
+    def test_eu_only_unmapped_requirement_status(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        cov = next(
+            c
+            for c in coverage_report.coverage_by_requirement
+            if c.requirement == "Capabilities, Performance, and Limitations"
+        )
+        assert cov.status == "eu_only"
+        assert cov.brazil_article is None
+        assert cov.eu_only_score == pytest.approx(0.4)
+
+    def test_uncovered_requirement_status(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        cov = next(
+            c
+            for c in coverage_report.coverage_by_requirement
+            if c.requirement == "Cyberattack Resilience"
+        )
+        assert cov.ran is False
+        assert cov.has_brazil_benchmark is False
+        assert cov.status == "uncovered"
+        assert cov.eu_only_score is None
+
+    def test_societal_alignment_credited_via_decorator(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        """aia_checklist (req. 'Societal Alignment', article via decorator) makes the Societal
+        Alignment requirement a ✅ Brazil benchmark even though it is unmapped."""
+        cov = next(
+            c
+            for c in fixture_report.coverage_by_requirement
+            if c.requirement == "Societal Alignment"
+        )
+        assert cov.has_brazil_benchmark is True
+        assert cov.brazil_article == "Arts. 25-28"
+        assert cov.status == "brazil"
+
+    def test_markdown_renders_coverage_section(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        md = coverage_report.to_markdown()
+        assert "## Brazil compliance coverage map (9 requirements)" in md
+        # All nine requirement names appear.
+        for requirement in NINE_TECHNICAL_REQUIREMENTS:
+            assert requirement in md
+        assert "✅ Brazil benchmark" in md
+        assert "🟡 EU task only" in md
+        assert "⚪ not yet covered" in md
+
+    def test_html_renders_coverage_section(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        doc = coverage_report.to_html()
+        assert "Brazil compliance coverage map (9 requirements)" in doc
+        for requirement in NINE_TECHNICAL_REQUIREMENTS:
+            # Requirement names with the em dash are HTML-escaped only for quotes; the dash
+            # itself survives, so a plain substring check holds.
+            assert requirement in doc
+        assert "cov-pill brazil" in doc
+        assert "cov-pill eu_only" in doc
+        assert "cov-pill uncovered" in doc
+
+    def test_json_carries_coverage(
+        self, coverage_report: BrazilComplianceReport
+    ) -> None:
+        data = json.loads(coverage_report.to_json())
+        assert "coverage_by_requirement" in data
+        rows = {r["requirement"]: r for r in data["coverage_by_requirement"]}
+        assert len(rows) == 9
+        assert rows["Interpretability"]["has_brazil_benchmark"] is True
+        assert rows["Interpretability"]["status"] == "brazil"
+        assert rows["Cyberattack Resilience"]["status"] == "uncovered"
