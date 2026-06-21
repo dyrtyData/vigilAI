@@ -47,3 +47,6 @@ docs/task-artifacts/*
 
 # Local Claude settings — may contain API keys, never commit/digest
 .claude/settings.local.json
+
+# Large media (hosted on NotebookLM; linked from README to keep the repo lightweight)
+report/*.mp4
