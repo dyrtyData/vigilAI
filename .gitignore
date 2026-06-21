@@ -43,3 +43,6 @@ logs/
 # which is published as the project's design rationale.
 docs/task-artifacts/*
 !docs/task-artifacts/03-design-discussion.md
+
+# Local Claude settings — may contain API keys, never commit/digest
+.claude/settings.local.json
