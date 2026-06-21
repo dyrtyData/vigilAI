@@ -158,14 +158,13 @@ model's EU--Brazil deltas are computed **within one coherent run** (same backend
 session), which is what makes the delta attributable to content rather than drift.
 Total API cost about **\$3**.
 
-**What didn't work / was constrained.** (a) The Claude Code subscription cannot serve
-as the eval backend — Inspect requires a real API key or a local provider; we used a
-funded key plus Ollama. (b) Full local runs across all nine EU requirements are
-impractical: several EU datasets (e.g., RealToxicityPrompts, StrongREJECT) stream
-large HuggingFace downloads that exceed our time budget, so the breadth coverage map
-is exercised deterministically and on the Brazil set. (c) Reproducibility: every
-number is verifiable via `mockllm/model` plus `pytest` (173 tests), and every reported
-score is emitted by `vigilai report` over committed run logs.
+**What didn't work / was constrained.** (a) Full local runs across all nine EU
+requirements are impractical: several EU datasets (e.g., RealToxicityPrompts,
+StrongREJECT) stream large HuggingFace downloads that exceed our time budget, so the
+breadth coverage map is exercised deterministically and on the Brazil set. (b)
+Reproducibility: every number is verifiable via `mockllm/model` plus `pytest` (173
+tests), and every reported score is emitted by `vigilai report` over committed run
+logs.
 
 ## 4. Results
 
