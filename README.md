@@ -174,12 +174,14 @@ and the AIA obligations have no COMPL-AI/EU benchmark counterpart, and that abse
 finding. The pair set is an explicit constant (`EU_BRAZIL_PAIRS` in
 [`src/vigilai/report/brazil_report.py`](src/vigilai/report/brazil_report.py)).
 
-### Headline result — Claude Haiku 4.5
+### Headline result (scaled, multi-model)
 
-> Real run: `anthropic/claude-haiku-4-5`, `--limit 20`, reproduced verbatim from
-> `uv run vigilai report logs/<run>`. Cross-checked on local `ollama/llama3.1:8b` (see the
-> key finding below). Sample sizes are small (`explanation_quality`/`aia_checklist` have 3/1
-> pilot scenarios) — these demonstrate the method, not a leaderboard claim.
+> Scaled runs: `anthropic/claude-haiku-4-5` and `anthropic/claude-sonnet-4-6` — full small sets
+> + `bbq`@100, **10 epochs**, temperature 1.0, seed 42 — cross-checked on local
+> `ollama/llama3.1:8b` ($0). **Full multi-model analysis, standard errors, conclusions, and
+> caveats: [reports/RESULTS.md](reports/RESULTS.md).**
+
+Per-article report (Claude Haiku 4.5, scaled), verbatim from `uv run vigilai report logs/<run>`:
 
 ```markdown
 # Brazil PL 2338/2023 — Compliance Report
@@ -191,34 +193,35 @@ finding. The pair set is an explicit constant (`EU_BRAZIL_PAIRS` in
 
 | Brazil article | Scope | Task | EU technical requirement | Score |
 |---|---|---|---|---|
-| Art. 5, I | all_ai | `human_deception_brazil` | Disclosure of AI | 0.500 |
-| **Art. 5, I — mean** | all_ai |  |  | **0.500** |
+| Art. 5, I | all_ai | `human_deception_brazil` | Disclosure of AI | 0.524 |
+| **Art. 5, I — mean** | all_ai |  |  | **0.524** |
 | Art. 5, III | all_ai | `bbq_brazil` | Representation — Absence of Bias | 0.700 |
 | **Art. 5, III — mean** | all_ai |  |  | **0.700** |
-| Art. 6, I | high_risk | `explanation_quality` | Interpretability | 0.778 |
-| **Art. 6, I — mean** | high_risk |  |  | **0.778** |
-| Arts. 25-28 | high_risk | `aia_checklist` | Societal Alignment | 1.000 |
-| **Arts. 25-28 — mean** | high_risk |  |  | **1.000** |
-
-## EU ↔ Brazil side-by-side
-
-| Brazil task | Brazil article | Brazil score | EU task | EU score | Δ (Brazil − EU) |
-|---|---|---|---|---|---|
-| `bbq_brazil` | Art. 5, III (all_ai) | 0.700 | `bbq` | 0.650 | +0.050 |
-| `human_deception_brazil` | Art. 5, I (all_ai) | 0.500 | `human_deception` | 1.000 | -0.500 |
-| `aia_checklist` | Arts. 25-28 (high_risk) | 1.000 | _no EU equivalent_ | — | — |
-| `explanation_quality` | Art. 6, I (high_risk) | 0.778 | _no EU equivalent_ | — | — |
+| Art. 6, I | high_risk | `explanation_quality` | Interpretability | 0.894 |
+| **Art. 6, I — mean** | high_risk |  |  | **0.894** |
+| Arts. 25-28 | high_risk | `aia_checklist` | Societal Alignment | 0.917 |
+| **Arts. 25-28 — mean** | high_risk |  |  | **0.917** |
 ```
 
-**Key finding (Art. 5, I — AI disclosure).** Claude Haiku 4.5 correctly denies being human on
-**100%** of the English/EU `human_deception` questions but only **50%** of the Portuguese +
-Brazil-specific (PL 2338/2023 Art. 5, I / LGPD) variants — a **−0.50** gap that EU-only
-benchmarking never surfaces. A local `ollama/llama3.1:8b` run reproduces the same 0.50 vs 1.00
-gap, so the effect is not model-specific. On the bias pair the model scores **+0.05** higher on
-the Brazilian IBGE / regional / intersectional set than on US-centric BBQ (within noise at this
-sample size). And Brazil's Art. 6 explanation right and Arts. 25-28 AIA obligations have **no
-EU/COMPL-AI benchmark counterpart at all** — the "no EU equivalent" rows are themselves a
-finding about where Global-South AI governance outruns the tooling built for the EU AI Act.
+**EU↔Brazil delta across models** (each pair reuses the exact same scorer, so Δ isolates the
+Brazil-specific content):
+
+| Pair | Haiku 4.5 | Sonnet 4.6 |
+|---|---|---|
+| Art. 5, I — AI disclosure (Brazil − EU) | 0.524 − 0.997 = **−0.47** | 0.524 − 1.000 = **−0.48** |
+| Art. 5, III — bias, IBGE/regional (Brazil − EU) | 0.700 − 0.858 = **−0.16** | 0.375 − 0.498 = **−0.12** |
+
+**Key finding (Art. 5, I — AI disclosure).** Both frontier models deny being human on ~**100%**
+of the English/EU `human_deception` questions but only ~**52%** of the Portuguese + Brazil-specific
+(PL 2338/2023 Art. 5, I / LGPD) variants — a **≈ −0.47 gap** that EU-only benchmarking never
+surfaces, reproduced on **Haiku, Sonnet, and Llama 3.1 8B**. On bias, **both** frontier models
+score *lower* on the Brazilian IBGE / regional / intersectional set than on US-centric BBQ (Haiku
+−0.16, Sonnet −0.12) — a trend in the predicted direction (≈1.2–1.5σ; the Brazilian set is a
+20-scenario pilot, so suggestive not yet conclusive). Brazil's Art. 6 explanation right and Arts.
+25-28 AIA obligations have **no EU/COMPL-AI counterpart at all** — the "no EU equivalent" rows are
+themselves a finding. See [reports/RESULTS.md](reports/RESULTS.md) for standard errors, the
+unresolved Sonnet `bbq` anomaly, and the methodological note that a small-n EU baseline flipped the
+pilot's bias sign (+0.05 → −0.16).
 
 ## Demo
 
