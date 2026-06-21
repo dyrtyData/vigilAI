@@ -93,6 +93,45 @@ class TestTaskAttribs:
             assert derived is not None, name
             assert (attribs["brazil_article"], attribs["brazil_scope"]) == derived, name
 
+    def test_decorator_mapping_agreement_holds_for_every_rights_mapped_task(self) -> None:
+        """Stronger drift guard: for **every** discovered task whose technical_requirement is
+        in the canonical Chapter II rights mapping, its decorator's (brazil_article,
+        brazil_scope) must equal the mapping's value — not just the hand-listed
+        ``EXPECTED_TAGGED_TASKS``.
+
+        Carve-out for AIA (Phase 6): a task may carry a per-task ``brazil_article`` for an
+        EU-only ``technical_requirement`` that is **deliberately not** in
+        ``TECH_REQ_TO_BRAZIL``. The ``aia_checklist`` task is tagged
+        ``technical_requirement="Societal Alignment"`` (an EU-only requirement, shared with
+        ``mask`` / ``simpleqa_verified`` / ``truthfulqa``) but carries
+        ``brazil_article="Arts. 25-28"`` because the AIA is a PL 2338/2023 **Chapter IV
+        governance instrument**, not a Chapter II rights-requirement. Such a tag must NOT be
+        added to the canonical requirement→article mapping (that would wrongly pull the other
+        "Societal Alignment" tasks under Arts. 25-28). So agreement is enforced **only when the
+        requirement is in the mapping**; an extra per-task article for an unmapped requirement
+        is explicitly allowed. This does not weaken the check for the rights-mapped tasks
+        above — those are still required to agree exactly.
+        """
+        for task in get_vigilai_tasks():
+            attribs = task.attribs
+            requirement = attribs.get("technical_requirement", "")
+            decorator_article = attribs.get("brazil_article")
+            derived = brazil_article_for(requirement)
+
+            if derived is not None:
+                # Rights-mapped requirement: decorator (if present) must agree exactly, and
+                # rights-mapped tasks are expected to carry the tag.
+                assert decorator_article is not None, task.name
+                assert (
+                    attribs.get("brazil_article"),
+                    attribs.get("brazil_scope"),
+                ) == derived, task.name
+            elif decorator_article is not None:
+                # EU-only requirement carrying an extra per-task article (the AIA carve-out):
+                # allowed precisely because the requirement is absent from the canonical
+                # mapping. Guard the invariant that makes the carve-out safe.
+                assert brazil_article_for(requirement) is None, task.name
+
     def test_every_mapped_requirement_has_at_least_one_tagged_task(self) -> None:
         """Each requirement in the mapping is actually used by a discovered task with the
         matching brazil_article attrib."""

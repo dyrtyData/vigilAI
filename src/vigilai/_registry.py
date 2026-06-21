@@ -1,5 +1,6 @@
 # ruff: noqa: F401
 
+from vigilai.tasks.aia_checklist import aia_checklist
 from vigilai.tasks.aime_2025 import aime_2025
 from vigilai.tasks.arc_challenge import arc_challenge
 from vigilai.tasks.bbq import bbq
