@@ -39,10 +39,11 @@ logs/
 .vscode/
 *~
 
-# Task planning artifacts (kept local; not published) — except the design narrative,
-# which is published as the project's design rationale.
+# Task planning artifacts (kept local; not published) — except the design narrative
+# and the research doc actually used, which are published as project rationale/research.
 docs/task-artifacts/*
 !docs/task-artifacts/03-design-discussion.md
+!docs/task-artifacts/02-research.md
 
 # Local Claude settings — may contain API keys, never commit/digest
 .claude/settings.local.json
