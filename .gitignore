@@ -38,3 +38,6 @@ logs/
 .idea/
 .vscode/
 *~
+
+# Task planning artifacts (kept local for NotebookLM/gitingest; not published)
+docs/task-artifacts/
