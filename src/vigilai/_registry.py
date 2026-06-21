@@ -9,6 +9,7 @@ from vigilai.tasks.bigbench_calibration import bigbench_calibration
 from vigilai.tasks.bold import bold
 from vigilai.tasks.boolq_contrast import boolq_contrast
 from vigilai.tasks.cab import cab
+from vigilai.tasks.contestation_review import contestation_review
 from vigilai.tasks.decoding_trust import decoding_trust
 from vigilai.tasks.explanation_quality import explanation_quality
 from vigilai.tasks.fairllm import fairllm

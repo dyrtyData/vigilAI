@@ -67,7 +67,7 @@ EU_PAIR_TASKS: frozenset[str] = frozenset(EU_BRAZIL_PAIRS.values())
 # finding ("no EU equivalent"); any Brazil-tagged task absent from EU_BRAZIL_PAIRS is treated
 # as Brazil-only regardless, so this is documentation rather than control flow.
 BRAZIL_ONLY_TASKS: frozenset[str] = frozenset(
-    {"explanation_quality", "aia_checklist"}
+    {"explanation_quality", "contestation_review", "aia_checklist"}
 )
 
 # Inspect prefixes task names with the plugin/registry name ("vigilai/human_deception").

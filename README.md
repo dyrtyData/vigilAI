@@ -39,6 +39,13 @@ This project was built for the **Global South AI Safety Hackathon** (Latam Gover
 - **Phase 7:** per-`brazil_article` compliance report with an **EU↔Brazil side-by-side**
   (`vigilai report <log_dir>`), plus demo run instructions for both a local and a hosted
   backend (see "Compliance report" and "Demo" below).
+- **Phase 8:** `contestation_review` benchmark (Art. 6, II + III — right to contest a
+  high-risk automated decision and right to human review / LGPD Art. 20), a novel rubric
+  benchmark scoring a response for the six contestation + human-review elements it must
+  contain. This **completes the high-risk Art. 6 rights triad** — explanation (Art. 6, I),
+  contestation (Art. 6, II), human review (Art. 6, III). **The EU AI Act has no individual
+  right to contest a model output, so there is no EU/COMPL-AI counterpart** — the literal
+  "beyond the EU" differentiator.
 
 ## Brazil benchmark datasets
 
@@ -88,14 +95,19 @@ source of truth for this table is [`src/vigilai/brazil/mapping.py`](src/vigilai/
 | Fairness — Absence of Discrimination | **Art. 5, III** | `all_ai` | Non-discrimination | `decoding_trust`, `fairllm` |
 | Interpretability | **Art. 6, I** | `high_risk` | Calibration proxy for explanation (cf. LGPD Art. 20) | `bigbench_calibration`, `triviaqa_calibration` |
 | Interpretability | **Art. 6, I** | `high_risk` | Right to explanation — *Brazil-only benchmark, no EU equivalent* | `explanation_quality` |
+| _Societal Alignment (EU req. reused as a host)_ | **Art. 6, II-III** | `high_risk` | Right to contest + right to human review — *Brazil-only benchmark, no EU equivalent* | `contestation_review` |
 | _Societal Alignment (EU req. reused as a host)_ | **Arts. 25-28** | `high_risk` | Algorithmic Impact Assessment — *Brazil-only benchmark, no EU equivalent* | `aia_checklist` |
+
+Together, `explanation_quality` (Art. 6, I), `contestation_review` (Art. 6, II + III), and the
+upstream calibration tasks cover the **complete high-risk Art. 6 rights triad**: explanation,
+contestation, and human review.
 
 The remaining EU technical requirements (Capabilities/Performance/Limitations, Robustness
 and Predictability, Cyberattack Resilience, Societal Alignment, Harmful Content and
 Toxicity) have **no direct Brazil Chapter II counterpart** and are listed as "no Brazil
 mapping" — that absence is itself a finding.
 
-Two Brazil obligations have **no dedicated EU COMPL-AI benchmark at all**, so vigilAI adds
+Three Brazil obligations have **no dedicated EU COMPL-AI benchmark at all**, so vigilAI adds
 new benchmarks for them (and the compliance report renders them as "no EU equivalent" rows —
 itself a headline finding):
 
@@ -103,6 +115,15 @@ itself a headline finding):
   requirement only measures *calibration* (TriviaQA / BIG-Bench), which is a proxy, not the
   rights-based explanation Brazil's Art. 6 / LGPD Art. 20 require. So `explanation_quality`
   is filed under Art. 6, I via its **decorator tag**, alongside the calibration tasks.
+- **Art. 6, II + III — right to contest + right to human review** (`contestation_review`).
+  The **EU AI Act has no individual right to contest a model output**, so there is no EU
+  requirement to host this benchmark under. Like `aia_checklist`, it is tagged
+  `technical_requirement="Societal Alignment"` (an EU-only requirement deliberately absent
+  from the requirement→article mapping, so the other `Societal Alignment` tasks — `mask`,
+  `simpleqa_verified`, `truthfulqa` — stay unmapped) and carries
+  `brazil_article="Art. 6, II-III"` as a **per-task decorator tag**, resolved decorator-first
+  by both `vigilai list --brazil` and `vigilai report`. This completes the high-risk Art. 6
+  rights triad.
 - **Arts. 25-28 — Algorithmic Impact Assessment** (`aia_checklist`). The AIA is a PL 2338/2023
   *Chapter IV governance instrument*, not a Chapter II rights-requirement, so its article is
   **not** added to the requirement→article mapping (that would wrongly pull the other
@@ -157,7 +178,7 @@ or JSON report — including an **EU↔Brazil side-by-side**:
 ```bash
 # 1. Evaluate the EU pair tasks AND the Brazil tasks on the SAME model, into one run dir
 uv run vigilai eval mockllm/model \
-  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist \
+  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist \
   --limit 5
 
 # 2. Render the Brazil PL 2338/2023 compliance report for that run
@@ -168,10 +189,11 @@ uv run vigilai report logs/<run-dir> --json   # machine-readable JSON
 The side-by-side compares only the **two direct-adaptation pairs that reuse the exact same
 scorer** — `human_deception` ↔ `human_deception_brazil` and `bbq` ↔ `bbq_brazil` — so the
 delta isolates the Brazil-specific content (Portuguese disclosure questions; IBGE / regional /
-intersectional categories) rather than confounding scorer differences. `explanation_quality`
-and `aia_checklist` are reported as **Brazil-only** rows: Brazil's Art. 6 explanation right
-and the AIA obligations have no COMPL-AI/EU benchmark counterpart, and that absence is itself a
-finding. The pair set is an explicit constant (`EU_BRAZIL_PAIRS` in
+intersectional categories) rather than confounding scorer differences. `explanation_quality`,
+`contestation_review`, and `aia_checklist` are reported as **Brazil-only** rows: Brazil's
+Art. 6 explanation and contestation/human-review rights and the AIA obligations have no
+COMPL-AI/EU benchmark counterpart, and that absence is itself a finding. The pair set is an
+explicit constant (`EU_BRAZIL_PAIRS` in
 [`src/vigilai/report/brazil_report.py`](src/vigilai/report/brazil_report.py)).
 
 ### Headline result (scaled, multi-model)
