@@ -321,7 +321,12 @@ supported, all driven by the same two commands above:
 
 ## License
 
-Apache-2.0 (inherited from COMPL-AI). See [LICENSE](LICENSE).
+- **Code:** Apache-2.0 (see [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE)) — inherited from
+  and matching upstream COMPL-AI.
+- **Report and figures** (`report/`): Creative Commons Attribution 4.0 (CC-BY-4.0).
+
+Copyright 2026 Diana Chang and Ian Duhamel Hayes. vigilAI is a fork of COMPL-AI
+(LatticeFlow AI / ETH Zurich / INSAIT); see [`NOTICE`](NOTICE) and the Citation below.
 
 ## Citation
 

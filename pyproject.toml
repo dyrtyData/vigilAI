@@ -3,8 +3,10 @@ name = "vigilai"
 version = "2.0.0"
 description = "Compliance-centered evaluation framework for Generative AI models."
 authors = [
-    {name = "Compl-AI Team", email = "contact@compl-ai.org"}
+    {name = "Diana Chang"},
+    {name = "Ian Duhamel Hayes"},
 ]
+# Forked from COMPL-AI (LatticeFlow AI / ETH Zurich / INSAIT); see NOTICE.
 license = "Apache-2.0"
 readme = "README.md"
 requires-python = ">=3.11, <3.14"

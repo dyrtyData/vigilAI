@@ -1,0 +1,29 @@
+vigilAI — Brazil PL 2338/2023 AI-compliance evaluation
+Copyright 2026 Diana Chang and Ian Duhamel Hayes
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product is a fork of COMPL-AI (Apache-2.0), the EU AI Act benchmarking suite by
+LatticeFlow AI, ETH Zurich, and INSAIT
+(https://compl-ai.org; https://github.com/compl-ai/compl-ai; arXiv:2410.07959).
+The original 30 EU benchmarks across nine technical requirements are preserved; the
+Brazil-specific benchmarks, the PL 2338/2023 article mappings, and the compliance
+reporting layer are added by this project. Please cite the original COMPL-AI work
+(see the Citation section in README.md).
+
+Data note
+---------
+This repository does NOT redistribute license-gated datasets. The fairness benchmark
+(bbq_brazil) is original, hand-authored content, anchored only on terms from
+SHADES / BiasShades (pt-BR; license-gated, not included) and ToxSyn-PT (CC BY 4.0,
+not included); no third-party dataset rows are committed. The COMPL-AI EU task
+datasets are downloaded at runtime from their original sources.
+
+Disclaimer
+----------
+The PL 2338/2023 article mappings are an engineering interpretation built for
+evaluation purposes, made against a bill still moving through the legislative process;
+they do not constitute legal advice or a determination of compliance for any specific
+deployment. The authors provide this software "AS IS", without warranty, and accept no
+liability for its use (see the Disclaimer of Warranty and Limitation of Liability in
+LICENSE, sections 7-8).
