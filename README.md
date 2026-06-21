@@ -199,7 +199,9 @@ Assessment** — the judge-facing AIA artifact. `--json` and `--html` are mutual
 [`reports/scorecard.html`](reports/scorecard.html) (also mirrored as
 [`scorecard-preview.html`](../.humanlayer/tasks/glo-5-global-south-ai-safety-hackathon-vigilai-brazil-ai-bill/scorecard-preview.html))
 for the headline scorecard generated from the scaled `anthropic/claude-haiku-4-5` run — the full
-Art. 6 triad visible.
+Art. 6 triad visible. The **6-model dossier** [`reports/multimodel-scorecard.html`](reports/multimodel-scorecard.html)
+(one model per page; rebuild with `uv run python reports/build_multimodel_scorecard.py`) collects a
+scorecard page for every model in the panel.
 
 Every report (Markdown, JSON, and HTML) also includes a **Brazil compliance coverage map** across
 **all nine** COMPL-AI technical requirements — not just the four (of nine) that carry a bespoke
