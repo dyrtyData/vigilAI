@@ -1,2 +1,40 @@
 # Graphify generated output (rebuilt on commit/checkout)
 graphify-out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environments / secrets
+.env
+.env.*
+!.env.example
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+
+# Inspect AI eval logs/output
+logs/
+*.eval
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*~

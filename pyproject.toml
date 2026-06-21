@@ -1,0 +1,101 @@
+[project]
+name = "vigilai"
+version = "2.0.0"
+description = "Compliance-centered evaluation framework for Generative AI models."
+authors = [
+    {name = "Compl-AI Team", email = "contact@compl-ai.org"}
+]
+license = "Apache-2.0"
+readme = "README.md"
+requires-python = ">=3.11, <3.14"
+dependencies = [
+    "inspect-evals[swe_bench]",
+    "inspect-ai",
+    "openai>=2.26.0",
+    "typer>=0.19.0",
+    "bidict>=0.23.1",
+    "detoxify>=0.5.2",
+    "gdown>=5.2.0",
+    "gensim>=4.3.3",
+    "llm-rules",
+    "nltk>=3.9.1",
+    "numpy>=1.26.4",
+    "platformdirs>=4.3.8",
+    "polars>=1.32.2",
+    "scipy>=1.13.1",
+    "torch>=2.7.1",
+    "fairlearn>=0.12.0",
+    "datasets>=3.6.0",
+    "regex>=2025.7.34",
+    "spacy>=3.8.7",
+    "en-core-web-sm",
+    "emoji>=2.15.0",    
+    "syllapy>=0.7.2",
+    "strong-reject",
+    "tqdm>=4.67.1",
+    "jinja2>=3.1.6",
+    "pydantic>=2.12.5",
+    "livebench",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0.0", "pytest-cov>=4.1.0", "types-PyYAML"]
+
+[project.entry-points.inspect_ai]
+vigilai = "vigilai._registry"
+
+[project.scripts]
+vigilai = "vigilai._cli:main"
+
+[project.urls]
+Homepage = "https://compl-ai.org/"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vigilai"]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+
+[tool.mypy]
+check_untyped_defs = true
+no_implicit_optional = true
+warn_unused_configs = true
+warn_redundant_casts = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+exclude = [
+    "^src/vigilai/tasks/self_check_consistency/compact_ie/", 
+    "^src/vigilai/tasks/ifbench/instructions.*",  
+    "^src/vigilai/tasks/ifbench/evaluation_lib\\.py$",
+]
+
+[tool.typos]
+default.check-file = true
+default.check-filename = true
+default.extend-ignore-identifiers-re = []
+default.extend-ignore-re = ["(?Rm)^.*(#|//)\\s*spellchecker:disable-line$"]
+files.extend-exclude = [
+    "*.ipynb",  # Notebook cells are asigned a hash.
+    "src/vigilai/tasks/self_check_consistency/topics.py",
+    "src/vigilai/tasks/self_check_consistency/compact_ie/",
+    "src/vigilai/tasks/mmlu_pro_robustness/correct_to_misspelling.json",
+]
+
+[tool.uv.sources]
+inspect-evals = { git = "https://github.com/UKGovernmentBEIS/inspect_evals" }
+llm-rules = { git = "https://github.com/normster/llm_rules" }
+strong_reject = { git = "https://github.com/dsbowen/strong_reject" }
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }
+livebench = { git = "https://github.com/LiveBench/LiveBench.git" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = "-rA --strict-markers --color=yes"
