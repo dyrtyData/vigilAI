@@ -9,6 +9,7 @@ from vigilai.tasks.bold import bold
 from vigilai.tasks.boolq_contrast import boolq_contrast
 from vigilai.tasks.cab import cab
 from vigilai.tasks.decoding_trust import decoding_trust
+from vigilai.tasks.explanation_quality import explanation_quality
 from vigilai.tasks.fairllm import fairllm
 from vigilai.tasks.forecast_consistency import forecast_consistency
 from vigilai.tasks.gpqa_diamond import gpqa_diamond
