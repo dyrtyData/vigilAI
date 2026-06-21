@@ -3,6 +3,7 @@ from inspect_ai._util.dotenv import init_dotenv
 
 from vigilai._cli.eval import eval_command
 from vigilai._cli.list import list_command
+from vigilai._cli.report import report_command
 
 
 app = typer.Typer(
@@ -17,6 +18,7 @@ app = typer.Typer(
 
 app.command("eval")(eval_command)
 app.command("list")(list_command)
+app.command("report")(report_command)
 
 
 def main() -> None:
