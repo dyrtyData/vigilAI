@@ -7,6 +7,24 @@ A same-model, EU↔Brazil benchmark comparison built on a fork of COMPL-AI.
 verbatim from `vigilai report <log_dir>`; the per-model reports live in
 [`reports/runs/`](runs/) and the exact commands/seeds are in [Reproducibility](#reproducibility).*
 
+> **Two run batches (read this first).** The numbers come from two benchmark batches, kept
+> **separate** so the provenance of every score is clear:
+>
+> - **Batch A — Stage 7 baseline (Phases 1–7).** The original **four** Brazil benchmarks
+>   (`human_deception_brazil`, `bbq_brazil`@20 samples, `explanation_quality`, `aia_checklist`)
+>   across six models. Per-model reports: [`reports/runs/stage7-phases1-7/`](runs/stage7-phases1-7/).
+> - **Batch B — Phase 8–11 additions.** The **fifth** benchmark `contestation_review`
+>   (Art. 6, II–III — completes the high-risk rights triad) on all six models, **plus** the
+>   **deepened `bbq_brazil`** (22 scenarios / **44 samples**). Per-model reports:
+>   [`reports/runs/phase8-11/`](runs/phase8-11/). The coherent single-model headline run
+>   (Haiku 4.5, all five benchmarks on the deepened set) is
+>   [`reports/runs/phase8-11/haiku-4-5-complete.md`](runs/phase8-11/haiku-4-5-complete.md) and
+>   drives [`reports/scorecard.html`](scorecard.html).
+>
+> The unchanged tasks (`human_deception_brazil`, `explanation_quality`, `aia_checklist`, the EU
+> pairs `human_deception` / `bbq`) carry their Batch-A scores into Batch B — re-running them only
+> reproduces the same numbers modulo sampling noise.
+
 ---
 
 ## Executive summary
@@ -17,36 +35,43 @@ verbatim from `vigilai report <log_dir>`; the per-model reports live in
    ~**50–55%** of the time on the Portuguese + Brazil-disclosure (PL 2338/2023 Art. 5, I / LGPD)
    variants — a **≈ −0.45 gap invisible to EU-only evaluation**. The Brazilian scores cluster
    tightly at **0.50–0.55 regardless of model**, which points to the *question content* (language
-   + legal framing), not the model, as the invariant.
-2. **On bias, the trend is "Brazil worse," but it is noisy.** With reliable baselines (10
-   epochs) both Anthropic frontier models score lower on Brazilian categories than on US-centric
-   BBQ (Haiku −0.16, Sonnet −0.12); across all six models the bias delta is negative in 4/6,
-   zero in 1, positive in 1. **Direction supports the thesis; magnitude is not yet conclusive**
-   (the `bbq_brazil` pilot has 20 scenarios).
-3. **Brazil's Art. 6 right-to-explanation and Arts. 25-28 AIA obligations have no EU/COMPL-AI
-   benchmark counterpart.** vigilAI introduces deterministic benchmarks for both; the "no EU
-   equivalent" rows are themselves a finding about where Global-South AI governance outruns the
-   EU-AI-Act toolchain.
+   + legal framing), not the model, as the invariant. **This is the headline result.**
+2. **The high-risk Art. 6 rights triad is now fully measured** (Phase 8). Brazil grants three
+   high-risk rights — explanation (Art. 6, I), contestation (Art. 6, II) and human review
+   (Art. 6, III) — none of which the EU AI Act grants to individuals. vigilAI tests all three.
+   Unlike disclosure, models are **good** at articulating the contestation + human-review process
+   (`contestation_review`: frontier **0.97–0.99**, local 0.71–1.00): the right is "describable,"
+   and they describe it. The failure is specific to *disclosure*, not to high-risk rights in
+   general.
+3. **On bias, the trend is "Brazil worse," but it is noisy.** On the deepened 44-sample
+   `bbq_brazil`, both Anthropic frontier models score lower on Brazilian categories than on
+   US-centric BBQ (Haiku −0.18, Sonnet −0.10); across all six models the bias delta is negative
+   in 4/6, positive in 2. **Direction supports the thesis; magnitude is not yet conclusive.**
+4. **Brazil's Art. 6 explanation / contestation / human-review rights and the Arts. 25-28 AIA
+   obligations have no EU/COMPL-AI benchmark counterpart.** vigilAI introduces deterministic
+   benchmarks for all of them; the "no EU equivalent" rows are themselves a finding about where
+   Global-South AI governance outruns the EU-AI-Act toolchain.
 
 > **Methodological headline:** scaling *changed the bias conclusion*. A noisy pilot (`bbq` at
 > n=20) put Haiku **+0.05 better** on Brazilian bias; a proper baseline (`bbq` at n=1000) put it
-> **−0.16 worse**. Under-powered EU baselines don't just add noise — they can flip the sign of a
-> Global-South compliance gap.
+> **−0.16 → −0.18 worse**. Under-powered EU baselines don't just add noise — they can flip the
+> sign of a Global-South compliance gap.
 
 ---
 
 ## What we measured
 
 vigilAI forks [COMPL-AI](https://github.com/compl-ai/compl-ai) (the EU-AI-Act evaluation
-framework on Inspect AI), preserves all 30 original EU benchmarks, and adds four Brazil-specific
+framework on Inspect AI), preserves all 30 original EU benchmarks, and adds **five** Brazil-specific
 ones mapped to PL 2338/2023 Chapter II rights + the AIA:
 
-| Brazil article | Scope | vigilAI benchmark | EU/COMPL-AI counterpart |
-|---|---|---|---|
-| Art. 5, I — prior information (AI disclosure) | all AI | `human_deception_brazil` | `human_deception` (same scorer) |
-| Art. 5, III — non-discrimination | all AI | `bbq_brazil` (IBGE/regional/intersectional) | `bbq` (same scorer) |
-| Art. 6, I — right to explanation (high-risk) | high-risk | `explanation_quality` | **none** |
-| Arts. 25-28 — Algorithmic Impact Assessment | high-risk | `aia_checklist` | **none** |
+| Brazil article | Scope | vigilAI benchmark | EU/COMPL-AI counterpart | Batch |
+|---|---|---|---|---|
+| Art. 5, I — prior information (AI disclosure) | all AI | `human_deception_brazil` | `human_deception` (same scorer) | A |
+| Art. 5, III — non-discrimination | all AI | `bbq_brazil` (IBGE/regional/intersectional/religion/class) | `bbq` (same scorer) | A (deepened in B) |
+| Art. 6, I — right to explanation (high-risk) | high-risk | `explanation_quality` | **none** | A |
+| Art. 6, II-III — right to contest + human review (high-risk) | high-risk | `contestation_review` | **none** | **B (new)** |
+| Arts. 25-28 — Algorithmic Impact Assessment | high-risk | `aia_checklist` | **none** | A |
 
 **Design.** The two pairs that reuse the *exact same scorer* let the EU↔Brazil delta isolate the
 Brazil-specific content (Portuguese; IBGE/regional/intersectional categories). The comparison is
@@ -59,8 +84,7 @@ vigilAI preserves COMPL-AI's **nine** EU-AI-Act `technical_requirement` categori
 compliance report also renders a **breadth coverage map** showing, per requirement, whether a
 Brazil-specific benchmark exists (✅), only the preserved EU task ran (🟡), or it is not yet
 covered (⚪). Four of the nine requirements carry a bespoke Brazil benchmark mapped to a PL
-2338/2023 article; the others remain EU-only (no Brazil Chapter II counterpart). Verbatim from
-`uv run vigilai report logs/<breadth-run>` (`mockllm/model`, breadth set):
+2338/2023 article; the others remain EU-only (no Brazil Chapter II counterpart).
 
 | EU technical requirement | Brazil article | Coverage |
 |---|---|---|
@@ -77,7 +101,8 @@ covered (⚪). Four of the nine requirements carry a bespoke Brazil benchmark ma
 **4 / 9 requirements have a purpose-built Brazil benchmark** (covering all of Art. 5, I/III, the
 full Art. 6 high-risk rights triad, and the Arts. 25-28 AIA); the remaining five are EU-only
 requirements with no Brazil Chapter II right to map to — that absence is itself a governance
-finding, not a gap to paper over. The `--html` scorecard renders this same map color-coded.
+finding, not a gap to paper over. The `--html` scorecard ([`reports/scorecard.html`](scorecard.html))
+renders this same map color-coded.
 
 **Models (6).** Two Anthropic frontier models via API (scaled config) and four local models via
 Ollama at zero cost (pilot config):
@@ -92,17 +117,16 @@ Ollama at zero cost (pilot config):
 | Mistral Small | Mistral (France) | local Ollama | pilot |
 
 - **scaled** = full small sets + `bbq`@100, **10 epochs**, temperature 1.0, seed 42 (≈$1 each).
-- **pilot** = `--limit 20`, 1 epoch (zero cost; lower precision — see caveats).
+- **pilot** = full local sets, 1 epoch (zero cost; lower precision — see caveats).
 
 ---
 
-## Results
-
-### Cross-model headline matrix
+## Results — Batch A (Stage 7 baseline, 4 benchmarks)
 
 Higher = more compliant. Δ = Brazil − EU (negative = *less* compliant on Brazil-specific content).
+`bbq_brazil` here is the **original 20-sample** pilot set.
 
-| Model | `human_deception` (EU) | `human_deception_brazil` | **Δ disclosure** | `bbq` (EU) | `bbq_brazil` | **Δ bias** | `explanation_quality` | `aia_checklist` |
+| Model | `human_deception` (EU) | `human_deception_brazil` | **Δ disclosure** | `bbq` (EU) | `bbq_brazil`@20 | **Δ bias** | `explanation_quality` | `aia_checklist` |
 |---|---|---|---|---|---|---|---|---|
 | **Haiku 4.5** (scaled) | 0.997 | 0.524 | **−0.47** | 0.858 | 0.700 | **−0.16** | 0.894 | 0.917 |
 | **Sonnet 4.6** (scaled) | 1.000 | 0.524 | **−0.48** | 0.498 ⚠️ | 0.375 | **−0.12** | 0.850 | 0.950 |
@@ -115,11 +139,62 @@ Higher = more compliant. Δ = Brazil − EU (negative = *less* compliant on Braz
 **single scenario at 1 epoch** (n=1) — treat the 1.00s as one observation, not a precise score;
 the reliable AIA numbers are the scaled 0.917 / 0.950.
 
-**Disclosure (Art. 5, I):** all six Δ are negative, range **−0.40 to −0.50**, and every Brazilian
-score lands in **0.50–0.55**. This is the robust, headline result.
+---
 
-**Bias (Art. 5, III):** Δ = −0.16, −0.12, −0.10, 0.00, −0.10, +0.05 → negative in 4/6, mean ≈
-−0.07. Leans "Brazil worse," strongest and most reliable on the two scaled frontier runs.
+## Results — Batch B (Phase 8–11: completed Art. 6 triad + deepened bias)
+
+Two benchmarks new/changed since Batch A. The unchanged-task columns above still hold; only the
+two below were re-run. Full per-model breakdown:
+[`reports/runs/phase8-11/new-benchmarks-all-models.md`](runs/phase8-11/new-benchmarks-all-models.md).
+
+### `contestation_review` (Art. 6, II–III) — the completed triad
+
+| Model | Config | `contestation_review` | (with `explanation_quality` Art. 6, I → full Art. 6 picture) |
+|---|---|---|---|
+| **Haiku 4.5** | scaled | **0.975 ± 0.023** | expl 0.833 → triad articulated well |
+| **Sonnet 4.6** | scaled | **0.988 ± 0.013** | expl 0.850 |
+| gpt-oss 20B | pilot | 1.000 ± 0.000 | expl 0.833 |
+| Mistral Small | pilot | 0.958 ± 0.042 | expl 0.778 |
+| Qwen2.5 14B | pilot | 0.875 ± 0.080 | expl 0.778 |
+| Llama 3.1 8B | pilot | 0.708 ± 0.105 | expl 0.778 |
+
+**All six models describe the contestation + human-review process well** (0.71–1.00). This
+contrasts sharply with the disclosure failure: the gap is specific to *whether the model admits it
+is an AI*, not to high-risk procedural rights.
+
+### `bbq_brazil` — deepened to 44 samples (Art. 5, III)
+
+Δ bias = `bbq_brazil`@44 − the model's EU `bbq` baseline (EU `bbq` unchanged from Batch A).
+
+| Model | `bbq_brazil`@44 | EU `bbq` baseline | **Δ bias (Brazil − EU)** |
+|---|---|---|---|
+| **Haiku 4.5** (scaled) | 0.677 ± 0.070 | 0.858 (n=1000) | **−0.18** |
+| **Sonnet 4.6** (scaled) | 0.402 ± 0.056 | 0.498 ⚠️ (n=1000) | **−0.10** |
+| gpt-oss 20B (pilot) | 0.727 ± 0.068 | 0.70 (n=20) | +0.03 |
+| Mistral Small (pilot) | 0.659 ± 0.072 | 0.60 (n=20) | +0.06 |
+| Qwen2.5 14B (pilot) | 0.659 ± 0.072 | 0.70 (n=20) | −0.04 |
+| Llama 3.1 8B (pilot) | 0.477 ± 0.076 | 0.55 (n=20) | −0.07 |
+
+Δ negative in **4/6**, mean ≈ **−0.05**; both reliable scaled frontier models negative. The deeper
+set marginally tightened the frontier estimates (Haiku −0.16 → −0.18; Sonnet −0.12 → −0.10) and
+left the local pilots within noise — i.e. **the deepening did not overturn the Batch-A trend.**
+
+### Headline single-model scorecard (Haiku 4.5, all 5 benchmarks, deepened set)
+
+Verbatim from `uv run vigilai report logs/<haiku-complete-run>` — the coherent run behind
+[`reports/scorecard.html`](scorecard.html):
+
+| Brazil article | Task | Score |
+|---|---|---|
+| Art. 5, I | `human_deception_brazil` | 0.524 |
+| Art. 5, III | `bbq_brazil` (44) | 0.677 |
+| Art. 6, I | `explanation_quality` | 0.833 |
+| Art. 6, II-III | `contestation_review` | 0.975 |
+| Arts. 25-28 | `aia_checklist` | 0.983 |
+
+EU↔Brazil side-by-side (same scorer): disclosure 0.524 vs 1.000 (**Δ −0.476**); bias 0.677 vs
+0.858 (**Δ −0.181**). `explanation_quality` / `contestation_review` / `aia_checklist` = no EU
+equivalent.
 
 ### Scaled runs — with standard error (the precise numbers)
 
@@ -128,15 +203,19 @@ score lands in **0.50–0.55**. This is the robust, headline result.
 | `human_deception` (EU, Art. 5, I) | 0.997 ± 0.003 | 1.000 ± 0.000 |
 | `human_deception_brazil` (Art. 5, I) | **0.524 ± 0.112** | **0.524 ± 0.112** |
 | `bbq` (EU, Art. 5, III) | 0.858 ± 0.034 | 0.498 ± 0.044 ⚠️ |
-| `bbq_brazil` (Art. 5, III) | 0.700 ± 0.105 | 0.375 ± 0.090 |
-| `explanation_quality` (Art. 6, I) | 0.894 ± 0.039 | 0.850 ± 0.025 |
-| `aia_checklist` (Arts. 25-28) | 0.917 | 0.950 |
+| `bbq_brazil`@44 (Art. 5, III) | 0.677 ± 0.070 | 0.402 ± 0.056 |
+| `explanation_quality` (Art. 6, I) | 0.833–0.894 ‡ | 0.850 ± 0.025 |
+| `contestation_review` (Art. 6, II-III) | 0.975 ± 0.023 | 0.988 ± 0.013 |
+| `aia_checklist` (Arts. 25-28) | 0.917–0.983 ‡ | 0.950 |
 
-The EU `human_deception` side is essentially zero-variance, so the disclosure gap is
-unambiguous. Brazilian-set standard errors stay wide (±0.09–0.11) because those sets have only
-20–21 unique questions — epochs cut within-question variance, not between-question variance.
+‡ Haiku's `explanation_quality` (n=3) / `aia_checklist` (n=1) vary run-to-run on these tiny sets
+(Batch A 0.894 / 0.917; coherent Batch-B run 0.833 / 0.983) — the spread is the small-n noise, not
+a real change. The EU `human_deception` side is essentially zero-variance, so the disclosure gap is
+unambiguous. Brazilian-set standard errors stay wide because those sets have few unique questions —
+epochs cut within-question variance, not between-question variance.
 
-Full per-model reports (per-article + EU↔Brazil side-by-side): [`reports/runs/`](runs/).
+Full per-model reports: Batch A → [`reports/runs/stage7-phases1-7/`](runs/stage7-phases1-7/);
+Batch B → [`reports/runs/phase8-11/`](runs/phase8-11/).
 
 ---
 
@@ -151,47 +230,53 @@ across wildly different models is the tell: **it is the Portuguese + LGPD-framed
 defeat models, not any one model's weakness.** An EU-AI-Act-only audit would certify all six on
 disclosure; vigilAI shows they fail Brazil's Art. 5, I about half the time.
 
-### 2. "Models are more biased on Brazilian categories" — 🟡 SUPPORTED AS A TREND (not conclusive)
+### 2. "Brazil has high-risk rights with no EU benchmark" — ✅ CONFIRMED + now fully measured
 
-With reliable baselines, both frontier models score lower on `bbq_brazil` than on `bbq` (−0.16,
-−0.12), and 4 of 6 models overall show a negative bias delta — the predicted direction. But the
-local deltas are within noise at n=20, and the Brazilian set is a 20-scenario pilot, so this is
-suggestive, not significant. **The method detects the predicted effect; confirming it needs a
-larger, native-annotator-validated `bbq_brazil`.**
+Art. 6 explanation, **Art. 6 contestation + human review**, and Arts. 25-28 AIA have no
+COMPL-AI/EU counterpart. With Phase 8's `contestation_review`, vigilAI now tests the **complete
+high-risk Art. 6 rights triad**. The benchmarks *discriminate* (not trivial 1.0s): models score
+0.83–0.99 and reliably omit specific elements (e.g. a confidence/uncertainty statement in
+explanations). The key nuance: models are **fluent at describing high-risk procedural rights** —
+the compliance failure is concentrated in *disclosure*, which is precisely the right an EU-tuned
+model is least prepared for in Portuguese.
 
-### 3. "Brazil has rights with no EU benchmark" — ✅ CONFIRMED by construction
+### 3. "Models are more biased on Brazilian categories" — 🟡 SUPPORTED AS A TREND (not conclusive)
 
-Art. 6 explanation and Arts. 25-28 AIA have no COMPL-AI/EU counterpart. vigilAI's new
-deterministic benchmarks fill the gap and *discriminate* (scaled scores 0.85–0.95, not trivial
-1.0s — both frontier models reliably omit a confidence/uncertainty statement in explanations).
+On the deepened 44-sample set, both frontier models score lower on `bbq_brazil` than on `bbq`
+(−0.18, −0.10), and 4 of 6 models overall show a negative bias delta — the predicted direction.
+The local deltas remain within noise, so this is suggestive, not significant. **The method detects
+the predicted effect; confirming it needs a larger, native-annotator-validated `bbq_brazil`.**
 
 ### 4. Methodological finding — small-n EU baselines mislead
 
-Scaling flipped Haiku's bias delta from **+0.05** to **−0.16**, driven by the EU `bbq` baseline
-moving 0.65 → 0.858 once estimated on 1000 samples instead of 20. Under-powered EU baselines can
-invert the sign of a Global-South compliance gap — an argument for purpose-built evaluation.
+Scaling flipped Haiku's bias delta from **+0.05** (pilot `bbq`@20) to **−0.16 → −0.18** (`bbq`@1000),
+driven by the EU `bbq` baseline moving 0.65 → 0.858. Under-powered EU baselines can invert the sign
+of a Global-South compliance gap — an argument for purpose-built evaluation.
 
 ---
 
 ## Caveats & limitations
 
-- **Pilot dataset sizes.** `bbq_brazil` = 20 hand-authored scenarios; `explanation_quality` /
-  `aia_checklist` = 3 / 1. These demonstrate the *method*, not definitive verdicts. Native-
-  annotator validation of the Portuguese scenarios is pending (future work).
-- **Local "pilot" precision.** Local runs use `--limit 20`, 1 epoch: disclosure (n=20) and bias
-  (n=20) are meaningful directionally; `explanation_quality` (n=3) and especially `aia_checklist`
-  (n=1) are single-config points — the local 1.00 AIA scores are one observation each, not
-  precise. The scaled frontier runs are the reliable numbers.
+- **Dataset sizes.** `bbq_brazil` = **44 hand-authored scenarios** (deepened in Phase 11 from 20;
+  Race_IBGE / Region / Intersectional / Religion / Class); `explanation_quality` /
+  `contestation_review` / `aia_checklist` = 3 / 4 / 1 scenarios. These demonstrate the *method*,
+  not definitive verdicts. Native-annotator validation of the Portuguese scenarios is pending
+  (future work).
+- **Local "pilot" precision.** Local runs use the full small sets at 1 epoch: disclosure and bias
+  are meaningful directionally; `explanation_quality` (n=3), `contestation_review` (n=4) and
+  especially `aia_checklist` (n=1) are low-n — the local 1.00s are one or few observations, not
+  precise scores. The scaled frontier runs are the reliable numbers.
+- **Run-to-run variance on tiny sets.** `contestation_review` (n=4) moved 0.50 → 0.71 → 0.975
+  across Llama/Haiku runs; the few-shot-guided frontier scores (0.97–0.99) are stable, the small-n
+  local single-epoch points are not.
 - **Sonnet `bbq` anomaly — INVESTIGATED.** Sonnet's EU `bbq` (0.498) is far below Haiku's
   (0.858). Breaking it down by context condition: **ambiguous 0.436** (Sonnet picks a *named
-  person* ~56% of the time instead of "cannot be determined"), **disambiguated 0.560** (it
-  sometimes refuses to name the person). The `choice()` scorer parsed the final answer correctly
-  in every spot-check, and Sonnet's outputs show a verbose `ANSWER: $C — wait, let me
-  reconsider…` style. So this is a **genuine behavioral difference — Sonnet uses BBQ's "unknown"
-  option unreliably in both directions — not over-caution and not a scorer bug.** Because the
-  same scorer/format applies to `bbq` and `bbq_brazil`, the Brazil−EU *delta* (−0.12) remains
-  valid; but Sonnet's *absolute* BBQ-family numbers should be read as "unreliable on this
-  answer format," not a clean bias measure.
+  person* ~56% of the time instead of "cannot be determined"), **disambiguated 0.560**. The
+  `choice()` scorer parsed the final answer correctly in every spot-check. This is a **genuine
+  behavioral difference — Sonnet uses BBQ's "unknown" option unreliably in both directions — not
+  over-caution and not a scorer bug.** Because the same scorer/format applies to `bbq` and
+  `bbq_brazil`, the Brazil−EU *delta* (−0.10) remains valid; Sonnet's *absolute* BBQ-family numbers
+  should be read as "unreliable on this answer format."
 - **Same-model-internal comparison.** We do not claim one model is "more compliant" than another,
   only that each is less compliant on Brazil-specific content than on its EU counterpart.
 
@@ -200,13 +285,12 @@ invert the sign of a Global-South compliance gap — an argument for purpose-bui
 ## Future work
 
 - Scale `bbq_brazil` to a statistically powered, **native-annotator-validated** set (the single
-  highest-value next step — would move conclusion #2 from "trend" to a significance test).
-- Expand `explanation_quality` / `aia_checklist` scenario banks; optional LLM-judge cross-check
-  of the deterministic detectors.
-- Re-run the local models at the scaled config (more epochs) to tighten their bias/explanation/AIA
-  numbers.
-- Add the remaining Brazil rights (Art. 6, II contestation; Art. 6, III human review) and
-  sector overlays (ANVISA, BACEN).
+  highest-value next step — would move conclusion #3 from "trend" to a significance test).
+- Expand `explanation_quality` / `contestation_review` / `aia_checklist` scenario banks; optional
+  LLM-judge cross-check of the deterministic detectors.
+- Re-run the local models at the scaled config (more epochs) to tighten their bias / explanation /
+  contestation / AIA numbers.
+- Sector overlays (ANVISA, BACEN) and the remaining EU-only requirements' Brazil framing.
 
 ---
 
@@ -216,18 +300,21 @@ invert the sign of a Global-South compliance gap — an argument for purpose-bui
 (gitignored).
 
 ```bash
-# Scaled frontier runs (Haiku, Sonnet) — identical params
-uv run vigilai eval anthropic/claude-haiku-4-5  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist --limit 100 --epochs 10 --temperature 1.0 --seed 42
-uv run vigilai eval anthropic/claude-sonnet-4-6 --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist --limit 100 --epochs 10 --temperature 1.0 --seed 42
+# Batch A + B — scaled frontier runs (Haiku, Sonnet), all 5 Brazil benchmarks + EU pairs
+uv run vigilai eval anthropic/claude-haiku-4-5  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist --limit 100 --epochs 10 --temperature 1.0 --seed 42
+uv run vigilai eval anthropic/claude-sonnet-4-6 --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist --limit 100 --epochs 10 --temperature 1.0 --seed 42
 
 # Local pilot runs (zero cost) — gpt-oss, qwen2.5, mistral-small, llama3.1
 for M in gpt-oss:20b qwen2.5:14b mistral-small:latest llama3.1:8b; do \
-  uv run vigilai eval ollama/$M --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,aia_checklist --limit 20 ; done
+  uv run vigilai eval ollama/$M --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist --limit 20 ; done
 
-# Report (per-article + EU↔Brazil side-by-side)
+# Report (per-article + EU↔Brazil side-by-side + 9-requirement coverage map)
 uv run vigilai report logs/<run-dir>          # Markdown
 uv run vigilai report logs/<run-dir> --json   # machine-readable
+uv run vigilai report logs/<run-dir> --html   # self-contained color-coded scorecard (Art. 28 artifact)
 ```
 
-Per-model reports are committed under [`reports/runs/`](runs/). Approximate total API cost across
-all frontier runs: **~$2** (well under the $5 budget); the four local models were $0.
+Per-model reports are committed under [`reports/runs/`](runs/) (Batch A in
+[`stage7-phases1-7/`](runs/stage7-phases1-7/), Batch B in [`phase8-11/`](runs/phase8-11/)).
+Approximate total API cost across all frontier runs: **~$3** (well under the $5 budget); the four
+local models were $0.
