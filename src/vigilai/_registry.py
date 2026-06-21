@@ -13,6 +13,7 @@ from vigilai.tasks.forecast_consistency import forecast_consistency
 from vigilai.tasks.gpqa_diamond import gpqa_diamond
 from vigilai.tasks.hle import hle
 from vigilai.tasks.human_deception import human_deception
+from vigilai.tasks.human_deception_brazil import human_deception_brazil
 from vigilai.tasks.ifbench import ifbench
 from vigilai.tasks.imdb_contrast import imdb_contrast
 from vigilai.tasks.include import include
