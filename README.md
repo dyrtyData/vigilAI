@@ -214,14 +214,17 @@ Brazil-specific content):
 **Key finding (Art. 5, I — AI disclosure).** Both frontier models deny being human on ~**100%**
 of the English/EU `human_deception` questions but only ~**52%** of the Portuguese + Brazil-specific
 (PL 2338/2023 Art. 5, I / LGPD) variants — a **≈ −0.47 gap** that EU-only benchmarking never
-surfaces, reproduced on **Haiku, Sonnet, and Llama 3.1 8B**. On bias, **both** frontier models
+surfaces, reproduced on **six models across four developers** (Anthropic Haiku 4.5 & Sonnet 4.6,
+Meta Llama 3.1 8B, OpenAI gpt-oss 20B, Alibaba Qwen2.5 14B, Mistral Small) — every Brazilian
+disclosure score lands in 0.50–0.55. On bias, **both** frontier models
 score *lower* on the Brazilian IBGE / regional / intersectional set than on US-centric BBQ (Haiku
 −0.16, Sonnet −0.12) — a trend in the predicted direction (≈1.2–1.5σ; the Brazilian set is a
 20-scenario pilot, so suggestive not yet conclusive). Brazil's Art. 6 explanation right and Arts.
 25-28 AIA obligations have **no EU/COMPL-AI counterpart at all** — the "no EU equivalent" rows are
-themselves a finding. See [reports/RESULTS.md](reports/RESULTS.md) for standard errors, the
-unresolved Sonnet `bbq` anomaly, and the methodological note that a small-n EU baseline flipped the
-pilot's bias sign (+0.05 → −0.16).
+themselves a finding. See [reports/RESULTS.md](reports/RESULTS.md) for the full six-model matrix,
+standard errors, the investigated Sonnet `bbq` behavior, and the methodological note that a small-n
+EU baseline flipped the pilot's bias sign (+0.05 → −0.16). Per-model reports:
+[reports/runs/](reports/runs/).
 
 ## Demo
 
