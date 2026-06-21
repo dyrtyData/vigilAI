@@ -441,6 +441,94 @@ class TestJsonRendering:
         assert rows["explanation_quality"]["has_eu_equivalent"] is False
 
 
+class TestHtmlRendering:
+    """The ``--html`` view is a self-contained, color-coded Art. 28 public-conclusions doc.
+
+    Reuses the shared ``fixture_report`` (Art. 5, I / Art. 5, III / Art. 6, I / Arts. 25-28
+    with the known fixture scores). Asserts the document is well-formed and self-contained
+    (no external assets), carries the Art. 28 framing + the article names + the EU↔Brazil
+    delta + the "no EU equivalent" marker, color-codes score cells by band, and HTML-escapes
+    dynamic values.
+    """
+
+    def test_is_self_contained_html_document(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        assert "<!DOCTYPE html>" in doc
+        assert "<html" in doc
+        assert "</html>" in doc
+        assert "<style" in doc
+
+    def test_no_external_assets(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        """No external src/href references — the scorecard must open offline."""
+        doc = fixture_report.to_html()
+        # No external resource references at all (no images/scripts/stylesheets/fonts).
+        assert "src=" not in doc
+        assert "href=" not in doc
+        assert "http://" not in doc
+        assert "https://" not in doc
+
+    def test_art28_public_conclusions_framing(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        assert "Art. 28" in doc
+        assert "public conclusions" in doc.lower()
+        assert "Algorithmic Impact Assessment" in doc
+
+    def test_contains_article_names(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        assert "Art. 5, I" in doc
+        assert "Art. 5, III" in doc
+        assert "Art. 6, I" in doc
+        assert "Arts. 25-28" in doc
+
+    def test_contains_delta_and_no_eu_equivalent_marker(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        doc = fixture_report.to_html()
+        # The disclosure / fairness deltas are -1.000 with the fixture scores.
+        assert "-1.000" in doc
+        assert "no EU equivalent" in doc
+
+    def test_score_cells_carry_band_classes(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        """Known fixture scores map to the expected band CSS classes.
+
+        explanation_quality=0.50 -> warn; bbq_brazil=0.0 -> bad; the EU pair scores=1.0 ->
+        good. The badge markup carries both the value and its band class.
+        """
+        doc = fixture_report.to_html()
+        assert 'class="badge bad">0.000<' in doc  # bbq_brazil / human_deception_brazil
+        assert 'class="badge warn">0.500<' in doc  # explanation_quality
+        assert 'class="badge good">1.000<' in doc  # EU human_deception / bbq
+
+    def test_dynamic_values_are_escaped(self, tmp_path: Path) -> None:
+        """A model id containing HTML metacharacters is escaped, not injected raw."""
+        from vigilai.report.brazil_report import build_brazil_report
+
+        log_dir = str(tmp_path / "esc_run")
+        _run_into(
+            log_dir,
+            _binary_task(
+                "human_deception_brazil", "Disclosure of AI", "Art. 5, I", "all_ai"
+            ),
+            _HIT,
+        )
+        report = build_brazil_report(log_dir)
+        # Force a dynamic value with metacharacters and confirm it is escaped in the output.
+        report.models = ["<script>x</script>"]
+        doc = report.to_html()
+        assert "<script>x</script>" not in doc
+        assert "&lt;script&gt;x&lt;/script&gt;" in doc
+
+
 class TestEndToEndOnRealTasks:
     """The read path works on genuine ``vigilai eval`` output (real registered tasks, mock).
 

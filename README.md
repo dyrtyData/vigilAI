@@ -182,9 +182,17 @@ uv run vigilai eval mockllm/model \
   --limit 5
 
 # 2. Render the Brazil PL 2338/2023 compliance report for that run
-uv run vigilai report logs/<run-dir>          # Markdown to stdout (default)
-uv run vigilai report logs/<run-dir> --json   # machine-readable JSON
+uv run vigilai report logs/<run-dir>                      # Markdown to stdout (default)
+uv run vigilai report logs/<run-dir> --json              # machine-readable JSON
+uv run vigilai report logs/<run-dir> --html > scorecard.html  # self-contained HTML scorecard
 ```
+
+The `--html` view is a **self-contained, color-coded compliance scorecard** (inline CSS, no
+external assets — opens offline anywhere): a per-article dashboard with band-colored scores and
+EU↔Brazil deltas, framed as the **Art. 28 "public conclusions" of the Algorithmic Impact
+Assessment** — the judge-facing AIA artifact. `--json` and `--html` are mutually exclusive. See
+[`scorecard-preview.html`](../.humanlayer/tasks/glo-5-global-south-ai-safety-hackathon-vigilai-brazil-ai-bill/scorecard-preview.html)
+for a sample generated from a real `ollama/llama3.1:8b` run (the full Art. 6 triad visible).
 
 The side-by-side compares only the **two direct-adaptation pairs that reuse the exact same
 scorer** — `human_deception` ↔ `human_deception_brazil` and `bbq` ↔ `bbq_brazil` — so the
