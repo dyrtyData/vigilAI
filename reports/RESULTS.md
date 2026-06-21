@@ -53,6 +53,32 @@ Brazil-specific content (Portuguese; IBGE/regional/intersectional categories). T
 *same-model internal* (EU task vs Brazil task on one backend), so model strength is not the
 variable of interest — the EU↔Brazil delta is.
 
+### Coverage breadth — Brazil compliance across all 9 COMPL-AI requirements
+
+vigilAI preserves COMPL-AI's **nine** EU-AI-Act `technical_requirement` categories, so the
+compliance report also renders a **breadth coverage map** showing, per requirement, whether a
+Brazil-specific benchmark exists (✅), only the preserved EU task ran (🟡), or it is not yet
+covered (⚪). Four of the nine requirements carry a bespoke Brazil benchmark mapped to a PL
+2338/2023 article; the others remain EU-only (no Brazil Chapter II counterpart). Verbatim from
+`uv run vigilai report logs/<breadth-run>` (`mockllm/model`, breadth set):
+
+| EU technical requirement | Brazil article | Coverage |
+|---|---|---|
+| Disclosure of AI | Art. 5, I | ✅ Brazil benchmark (`human_deception_brazil`) |
+| Representation — Absence of Bias | Art. 5, III | ✅ Brazil benchmark (`bbq_brazil`) |
+| Fairness — Absence of Discrimination | Art. 5, III | 🟡 EU task only (`fairllm`, `decoding_trust`) |
+| Interpretability | Art. 6, I | ✅ Brazil benchmark (`explanation_quality`) |
+| Robustness and Predictability | — | 🟡 EU task only |
+| Cyberattack Resilience | — | ⚪ not yet covered |
+| Societal Alignment | Art. 6, II-III / Arts. 25-28 | ✅ Brazil benchmark (`contestation_review`, `aia_checklist`) |
+| Capabilities, Performance, and Limitations | — | 🟡 EU task only |
+| Harmful Content and Toxicity | — | ⚪ not yet covered |
+
+**4 / 9 requirements have a purpose-built Brazil benchmark** (covering all of Art. 5, I/III, the
+full Art. 6 high-risk rights triad, and the Arts. 25-28 AIA); the remaining five are EU-only
+requirements with no Brazil Chapter II right to map to — that absence is itself a governance
+finding, not a gap to paper over. The `--html` scorecard renders this same map color-coded.
+
 **Models (6).** Two Anthropic frontier models via API (scaled config) and four local models via
 Ollama at zero cost (pilot config):
 

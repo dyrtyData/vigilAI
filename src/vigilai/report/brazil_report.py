@@ -49,6 +49,32 @@ from vigilai.brazil.mapping import brazil_article_for
 
 
 # ---------------------------------------------------------------------------------------
+# The nine COMPL-AI EU-AI-Act technical-requirement categories, in canonical display order.
+#
+# vigilAI preserves COMPL-AI's nine requirement categories unchanged; the breadth coverage map
+# (Phase 10) reports Brazil compliance across *all nine*, not only the four with bespoke Brazil
+# tasks — surfacing, per requirement, whether a Brazil-specific benchmark exists, and the EU-task
+# score where it does not. The list is fixed (independent of which tasks a given run includes) so
+# the coverage map always shows the full breadth: a requirement with no task in the run renders as
+# "not yet covered" (⚪) rather than silently vanishing. Mapped requirements lead (the four with a
+# Brazil article), then the remaining EU-only requirements.
+# ---------------------------------------------------------------------------------------
+NINE_TECHNICAL_REQUIREMENTS: tuple[str, ...] = (
+    # Mapped to a Brazil PL 2338/2023 article (see TECH_REQ_TO_BRAZIL).
+    "Disclosure of AI",
+    "Representation — Absence of Bias",
+    "Fairness — Absence of Discrimination",
+    "Interpretability",
+    # No direct Brazil Chapter II counterpart (EU-only requirements).
+    "Robustness and Predictability",
+    "Cyberattack Resilience",
+    "Societal Alignment",
+    "Capabilities, Performance, and Limitations",
+    "Harmful Content and Toxicity",
+)
+
+
+# ---------------------------------------------------------------------------------------
 # EU↔Brazil pairing config.
 #
 # Made an explicit constant (not "magic") per the structure outline: the ONLY two pairs that
@@ -71,6 +97,14 @@ EU_PAIR_TASKS: frozenset[str] = frozenset(EU_BRAZIL_PAIRS.values())
 BRAZIL_ONLY_TASKS: frozenset[str] = frozenset(
     {"explanation_quality", "contestation_review", "aia_checklist"}
 )
+
+# The vigilAI-authored **Brazil-specific benchmarks** — the tasks purpose-built for PL 2338/2023
+# (the two same-scorer Brazil adaptations plus the Brazil-only benchmarks). Used by the
+# 9-requirement coverage map to distinguish a genuine Brazil benchmark (✅) from a *preserved EU
+# task* whose requirement merely maps to a Brazil article (🟡, e.g. ``fairllm`` / ``bold`` /
+# ``cab`` / ``decoding_trust``). Defined here (derived from the two explicit constants above) so
+# the coverage map and the headline phrasing never drift.
+BRAZIL_BENCHMARK_TASKS: frozenset[str] = frozenset(EU_BRAZIL_PAIRS) | BRAZIL_ONLY_TASKS
 
 # Inspect prefixes task names with the plugin/registry name ("vigilai/human_deception").
 _REGISTRY_PREFIX = "vigilai/"
@@ -235,6 +269,42 @@ class SideBySideRow:
         return self.brazil_score - self.eu_score
 
 
+@dataclass(frozen=True)
+class RequirementCoverage:
+    """One row of the 9-requirement breadth coverage map (Phase 10).
+
+    For each COMPL-AI technical requirement, records whether Brazil compliance is covered by a
+    **Brazil-specific benchmark** (✅), by an **EU task only** (🟡 — the requirement was exercised
+    in the run but only via its preserved original COMPL-AI task), or **not yet covered** (⚪ — no
+    task for this requirement ran). ``brazil_article`` is the PL 2338/2023 article when one exists
+    (either via the requirement→article mapping or carried on the Brazil benchmark's decorator),
+    else ``None``.
+
+    Attributes:
+        requirement: The COMPL-AI ``technical_requirement`` string (one of the canonical nine).
+        brazil_article: The PL 2338/2023 article this requirement maps to, or ``None``.
+        has_brazil_benchmark: True if a Brazil-specific benchmark for this requirement ran.
+        eu_only_score: Mean EU-task score for this requirement when there is no Brazil benchmark
+            (context for an EU-only requirement that was nonetheless exercised), else ``None``.
+        ran: True if any task for this requirement appeared in the run at all.
+    """
+
+    requirement: str
+    brazil_article: str | None
+    has_brazil_benchmark: bool
+    eu_only_score: float | None
+    ran: bool
+
+    @property
+    def status(self) -> str:
+        """Coverage status: ``"brazil"`` (✅) / ``"eu_only"`` (🟡) / ``"uncovered"`` (⚪)."""
+        if self.has_brazil_benchmark:
+            return "brazil"
+        if self.ran:
+            return "eu_only"
+        return "uncovered"
+
+
 @dataclass
 class BrazilComplianceReport:
     """The assembled Brazil PL 2338/2023 compliance report for one run directory.
@@ -248,6 +318,8 @@ class BrazilComplianceReport:
             excluding the EU pair counterparts, which live in the side-by-side EU column).
         eu_task_scores: EU counterpart task scores that participate in a side-by-side pair.
         unmapped_tasks: EU-only task scores with no Brazil article (context, not scored here).
+        coverage_by_requirement: The 9-requirement breadth coverage map (one row per canonical
+            COMPL-AI technical requirement), in :data:`NINE_TECHNICAL_REQUIREMENTS` order.
     """
 
     log_dir: str
@@ -257,6 +329,7 @@ class BrazilComplianceReport:
     brazil_task_scores: list[TaskScore]
     eu_task_scores: list[TaskScore]
     unmapped_tasks: list[TaskScore]
+    coverage_by_requirement: list[RequirementCoverage]
 
     # -- lookups -------------------------------------------------------------------------
 
@@ -312,6 +385,17 @@ class BrazilComplianceReport:
                 }
                 for row in self.side_by_side
             ],
+            "coverage_by_requirement": [
+                {
+                    "requirement": cov.requirement,
+                    "brazil_article": cov.brazil_article,
+                    "has_brazil_benchmark": cov.has_brazil_benchmark,
+                    "eu_only_score": cov.eu_only_score,
+                    "ran": cov.ran,
+                    "status": cov.status,
+                }
+                for cov in self.coverage_by_requirement
+            ],
         }
 
     def to_json(self, indent: int = 2) -> str:
@@ -351,6 +435,15 @@ def _fmt_delta(value: float | None) -> str:
 
 def _scope_suffix(scope: str | None) -> str:
     return f" ({scope})" if scope else ""
+
+
+# Coverage status -> (Markdown glyph + label). Shared by the Markdown and HTML coverage maps so
+# the two never drift. ✅ Brazil benchmark / 🟡 EU task only / ⚪ not yet covered.
+_COVERAGE_MARK: dict[str, str] = {
+    "brazil": "✅ Brazil benchmark",
+    "eu_only": "🟡 EU task only",
+    "uncovered": "⚪ not yet covered",
+}
 
 
 def _render_markdown(report: BrazilComplianceReport) -> str:
@@ -418,6 +511,27 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
         lines.append(
             f"| `{row.brazil_task}` | {article} | {_fmt_score(row.brazil_score)} | "
             f"{eu_task} | {eu_score} | {delta} |"
+        )
+    lines.append("")
+
+    # -- Coverage map section (9-requirement breadth) -----------------------------------
+    lines.append("## Brazil compliance coverage map (9 requirements)")
+    lines.append("")
+    lines.append(
+        "Brazil compliance assessed across **all nine** COMPL-AI technical requirements — not "
+        "just the four with bespoke Brazil benchmarks. ✅ a Brazil-specific benchmark covers the "
+        "requirement; 🟡 only the preserved EU/COMPL-AI task ran (no Brazil benchmark yet); ⚪ "
+        "not covered in this run."
+    )
+    lines.append("")
+    lines.append(
+        "| EU technical requirement | Brazil article | Coverage | EU-only score |"
+    )
+    lines.append("|---|---|---|---|")
+    for cov in report.coverage_by_requirement:
+        lines.append(
+            f"| {cov.requirement} | {cov.brazil_article or '—'} | "
+            f"{_COVERAGE_MARK[cov.status]} | {_fmt_score(cov.eu_only_score)} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -501,9 +615,24 @@ tr.mean td { font-weight: 700; background: #f8f9fb; border-top: 2px solid var(--
 .badge.bad  { color: var(--bad);  background: var(--bad-bg); }
 .badge.na   { color: var(--na);   background: var(--na-bg); }
 .no-eu { color: var(--muted); font-style: italic; }
+td.cov, th.cov { white-space: nowrap; }
+.cov-pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px;
+  font-weight: 600; font-size: .85rem; }
+.cov-pill.brazil    { color: var(--good); background: var(--good-bg); }
+.cov-pill.eu_only   { color: var(--warn); background: var(--warn-bg); }
+.cov-pill.uncovered { color: var(--na);   background: var(--na-bg); }
 footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--line);
   color: var(--muted); font-size: .82rem; }
 """
+
+
+# Coverage status -> (HTML pill label). The glyphs are kept (they render fine in HTML) so the
+# Markdown and HTML maps read identically; the pill's CSS class colors it by status.
+_COVERAGE_HTML_LABEL: dict[str, str] = {
+    "brazil": "✅ Brazil benchmark",
+    "eu_only": "🟡 EU task only",
+    "uncovered": "⚪ not yet covered",
+}
 
 
 def _html_badge(value: float | None, band: str) -> str:
@@ -591,6 +720,38 @@ def _render_side_by_side_table(report: BrazilComplianceReport) -> list[str]:
     return rows
 
 
+def _render_coverage_table(report: BrazilComplianceReport) -> list[str]:
+    rows: list[str] = []
+    rows.append("<table>")
+    rows.append(
+        "<thead><tr>"
+        "<th>EU technical requirement</th><th>Brazil article</th>"
+        "<th class='cov'>Coverage</th><th class='score'>EU-only score</th>"
+        "</tr></thead>"
+    )
+    rows.append("<tbody>")
+    for cov in report.coverage_by_requirement:
+        pill = (
+            f"<span class='cov-pill {cov.status}'>"
+            f"{_esc(_COVERAGE_HTML_LABEL[cov.status])}</span>"
+        )
+        eu_only_cell = (
+            _html_badge(cov.eu_only_score, _score_band(cov.eu_only_score))
+            if cov.eu_only_score is not None
+            else "<span class='badge na'>—</span>"
+        )
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(cov.requirement)}</td>"
+            f"<td>{_esc(cov.brazil_article or '—')}</td>"
+            f"<td class='cov'>{pill}</td>"
+            f"<td class='score'>{eu_only_cell}</td>"
+            "</tr>"
+        )
+    rows.append("</tbody></table>")
+    return rows
+
+
 def _render_html(report: BrazilComplianceReport) -> str:
     model_str = ", ".join(report.models) if report.models else "(unknown)"
     generated = date.today().isoformat()
@@ -653,6 +814,17 @@ def _render_html(report: BrazilComplianceReport) -> str:
         "absence is itself a finding.</p>"
     )
     parts.extend(_render_side_by_side_table(report))
+
+    # -- Coverage map section (9-requirement breadth) -----------------------------------
+    parts.append("<h2>Brazil compliance coverage map (9 requirements)</h2>")
+    parts.append(
+        '<p class="note">Brazil compliance assessed across <strong>all nine</strong> COMPL-AI '
+        "technical requirements — not just the four with bespoke Brazil benchmarks. "
+        '<span class="cov-pill brazil">✅ Brazil benchmark</span> '
+        '<span class="cov-pill eu_only">🟡 EU task only</span> '
+        '<span class="cov-pill uncovered">⚪ not yet covered</span></p>'
+    )
+    parts.extend(_render_coverage_table(report))
 
     parts.append(
         "<footer>Generated by <code>vigilai report --html</code>. Self-contained "
@@ -778,6 +950,67 @@ def _build_side_by_side(
     return paired_rows + brazil_only_rows
 
 
+def _build_coverage(all_scores: list[TaskScore]) -> list[RequirementCoverage]:
+    """Build the 9-requirement breadth coverage map.
+
+    For each canonical COMPL-AI technical requirement (always all nine, in fixed order), decide:
+
+    * **has_brazil_benchmark** — True if a *vigilAI Brazil-specific benchmark*
+      (:data:`BRAZIL_BENCHMARK_TASKS`) for this requirement ran. This deliberately excludes
+      *preserved EU tasks* whose requirement merely maps to a Brazil article (``fairllm`` /
+      ``bold`` / ``cab`` / ``decoding_trust``): those make the requirement "EU task only" (🟡),
+      not "Brazil benchmark" (✅). It correctly credits ``contestation_review`` / ``aia_checklist``
+      (requirement ``"Societal Alignment"``) to that requirement via the explicit benchmark set.
+    * **brazil_article** — the article of the covering Brazil benchmark if one exists, else the
+      requirement→article mapping (so the four mapped requirements still show their article even
+      when only an EU task ran), else ``None``.
+    * **eu_only_score** — when there is no Brazil benchmark, the mean headline score of the run's
+      tasks for this requirement (context for an exercised-but-EU-only requirement), else ``None``.
+    * **ran** — True if any task for this requirement appeared in the run.
+    """
+    scores_by_req: dict[str, list[TaskScore]] = {}
+    for s in all_scores:
+        if s.technical_requirement:
+            scores_by_req.setdefault(s.technical_requirement, []).append(s)
+
+    coverage: list[RequirementCoverage] = []
+    for requirement in NINE_TECHNICAL_REQUIREMENTS:
+        req_all = scores_by_req.get(requirement, [])
+        req_benchmarks = [t for t in req_all if t.task in BRAZIL_BENCHMARK_TASKS]
+        has_brazil = bool(req_benchmarks)
+        ran = bool(req_all)
+
+        # Article: prefer the covering Brazil benchmark's article, else the requirement mapping.
+        article: str | None = None
+        if req_benchmarks:
+            article = next(
+                (t.brazil_article for t in req_benchmarks if t.brazil_article is not None),
+                None,
+            )
+        if article is None:
+            mapped = brazil_article_for(requirement)
+            if mapped is not None:
+                article = mapped[0]
+
+        # EU-only score: mean of the requirement's run scores when there is no Brazil benchmark.
+        eu_only_score: float | None = None
+        if not has_brazil:
+            values = [t.score for t in req_all if t.score is not None]
+            if values:
+                eu_only_score = sum(values) / len(values)
+
+        coverage.append(
+            RequirementCoverage(
+                requirement=requirement,
+                brazil_article=article,
+                has_brazil_benchmark=has_brazil,
+                eu_only_score=eu_only_score,
+                ran=ran,
+            )
+        )
+    return coverage
+
+
 def build_brazil_report(log_dir: str) -> BrazilComplianceReport:
     """Build a :class:`BrazilComplianceReport` from an Inspect run directory.
 
@@ -822,4 +1055,5 @@ def build_brazil_report(log_dir: str) -> BrazilComplianceReport:
         brazil_task_scores=brazil_scores,
         eu_task_scores=eu_scores,
         unmapped_tasks=unmapped,
+        coverage_by_requirement=_build_coverage(all_scores),
     )

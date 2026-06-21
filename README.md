@@ -194,6 +194,19 @@ Assessment** — the judge-facing AIA artifact. `--json` and `--html` are mutual
 [`scorecard-preview.html`](../.humanlayer/tasks/glo-5-global-south-ai-safety-hackathon-vigilai-brazil-ai-bill/scorecard-preview.html)
 for a sample generated from a real `ollama/llama3.1:8b` run (the full Art. 6 triad visible).
 
+Every report (Markdown, JSON, and HTML) also includes a **Brazil compliance coverage map** across
+**all nine** COMPL-AI technical requirements — not just the four with bespoke Brazil tasks. Each
+requirement is flagged ✅ (a Brazil-specific benchmark covers it), 🟡 (only the preserved EU/COMPL-AI
+task ran), or ⚪ (not covered in the run), so the report shows Brazil-compliance *breadth* at a
+glance. To exercise the full breadth, add one EU task per remaining requirement to the run, e.g.:
+
+```bash
+uv run vigilai eval mockllm/model \
+  --tasks human_deception,human_deception_brazil,bbq,bbq_brazil,explanation_quality,contestation_review,aia_checklist,fairllm,forecast_consistency,arc_challenge \
+  --limit 3
+uv run vigilai report logs/<run-dir>   # 9-requirement coverage map at the bottom
+```
+
 The side-by-side compares only the **two direct-adaptation pairs that reuse the exact same
 scorer** — `human_deception` ↔ `human_deception_brazil` and `bbq` ↔ `bbq_brazil` — so the
 delta isolates the Brazil-specific content (Portuguese disclosure questions; IBGE / regional /
