@@ -16,7 +16,7 @@ Chapter II rights (Arts. 5-6) and the Algorithmic Impact Assessment framework (A
 > requirements) is **preserved in full** so the EU AI Act benchmarks can be run on the same
 > model as the Brazil-specific benchmarks for a direct EU↔Brazil comparison.
 
-This project was built for the **Global South AI Safety Hackathon** (Latam Governance subtrack).
+This project was built for the [**Global South AI Safety Hackathon**](https://apartresearch.com/sprints/global-south-ais-hackathon-2026-06-19-to-2026-06-21) (Apart Research, June 2026) — Latam Governance subtrack.
 
 ## Report & media
 
@@ -205,8 +205,7 @@ The `--html` view is a **self-contained, color-coded compliance scorecard** (inl
 external assets — opens offline anywhere): a per-article dashboard with band-colored scores and
 EU↔Brazil deltas, framed as the **Art. 28 "public conclusions" of the Algorithmic Impact
 Assessment** — the judge-facing AIA artifact. `--json` and `--html` are mutually exclusive. See
-[`reports/scorecard.html`](reports/scorecard.html) (also mirrored as
-[`scorecard-preview.html`](../.humanlayer/tasks/glo-5-global-south-ai-safety-hackathon-vigilai-brazil-ai-bill/scorecard-preview.html))
+[`reports/scorecard.html`](reports/scorecard.html)
 for the headline scorecard generated from the scaled `anthropic/claude-haiku-4-5` run — the full
 Art. 6 triad visible. The **6-model dossier** [`reports/multimodel-scorecard.html`](reports/multimodel-scorecard.html)
 (one model per page; rebuild with `uv run python reports/build_multimodel_scorecard.py`) collects a
