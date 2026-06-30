@@ -20,10 +20,10 @@ This project was built for the [**Global South AI Safety Hackathon**](https://ap
 
 ## Report & media
 
-- 📄 **Final report:** [`report/vigilai-brazil-pl2338-compliance.pdf`](report/vigilai-brazil-pl2338-compliance.pdf) ([markdown source](report/vigilai-brazil-pl2338-compliance.md)) — the full hackathon paper, including the six-model compliance dossier appendix.
+- 📄 **Final report:** [`report/vigilai-brazil-pl2338-compliance_paper.pdf`](report/vigilai-brazil-pl2338-compliance_paper.pdf) ([markdown source](report/vigilai-brazil-pl2338-compliance.md)) — the full hackathon paper, including the six-model compliance dossier appendix.
 - 🎬 **Video overview** (NotebookLM): <https://notebooklm.google.com/notebook/e885d8db-b69a-4395-abdf-f0de618965e8/artifact/338c5582-a26a-41c6-9a76-5e16dea4390c?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1>
-- 🖼️ **Infographic:** [`report/Brazil_AI_Compliance_Audit_Results.png`](report/Brazil_AI_Compliance_Audit_Results.png)
-- 📊 **Slides:** [`report/Certification_is_Jurisdictional.pdf`](report/Certification_is_Jurisdictional.pdf)
+- 🖼️ **Infographic:** [`report/Brazil_AI_Compliance_Audit_Results_infographic.png`](report/Brazil_AI_Compliance_Audit_Results_infographic.png)
+- 📊 **Slides:** [`report/Certification_is_Jurisdictional_slidedeck.pdf`](report/Certification_is_Jurisdictional_slidedeck.pdf)
 
 *The video is hosted on NotebookLM (not committed, to keep the repo lightweight); the infographic and slides were generated with NotebookLM from the report and committed here.*
 

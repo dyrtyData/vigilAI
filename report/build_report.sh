@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$PATH:/Library/TeX/texbin"
 MD="vigilai-brazil-pl2338-compliance.md"
-OUT="vigilai-brazil-pl2338-compliance.pdf"
+OUT="vigilai-brazil-pl2338-compliance_paper.pdf"
 CHROME="${CHROME:-/Applications/Google Chrome.app/Contents/MacOS/Google Chrome}"
 
 pandoc "$MD" -o /tmp/_vigilai_body.pdf --resource-path "." \
