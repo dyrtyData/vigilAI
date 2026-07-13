@@ -1,5 +1,8 @@
 # vigilAI
 
+🏆 Hackathon Results & Reviewer Reception
+Awarded Top 25% out of 217 submissions at the Global South AI Safety Hackathon
+
 **Brazil PL 2338/2023 (AI Act) compliance evaluation for Generative AI systems.**
 
 vigilAI is a compliance-centered LLM evaluation tool that maps model behavior to the
