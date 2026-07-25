@@ -25,7 +25,10 @@ network access is needed.
 from __future__ import annotations
 
 import json
+import math
+import statistics
 from pathlib import Path
+from typing import Any
 
 import pytest
 from inspect_ai import eval as inspect_eval
@@ -42,10 +45,14 @@ from inspect_ai.scorer import Score
 from inspect_ai.scorer import stderr
 from inspect_ai.solver import generate
 
+from vigilai.report.brazil_report import _stderr_metric
+from vigilai.report.brazil_report import ArticleGroup
 from vigilai.report.brazil_report import build_brazil_report
 from vigilai.report.brazil_report import BrazilComplianceReport
 from vigilai.report.brazil_report import EU_BRAZIL_PAIRS
 from vigilai.report.brazil_report import NINE_TECHNICAL_REQUIREMENTS
+from vigilai.report.brazil_report import SideBySideRow
+from vigilai.report.brazil_report import TaskScore
 
 
 # ---------------------------------------------------------------------------------------
@@ -766,3 +773,483 @@ class TestCoverageMap:
         assert rows["Interpretability"]["has_brazil_benchmark"] is True
         assert rows["Interpretability"]["status"] == "brazil"
         assert rows["Cyberattack Resilience"]["status"] == "uncovered"
+
+
+# ---------------------------------------------------------------------------------------
+# Iteration 2 / Phase 1 — standard errors end-to-end.
+#
+# The one-sample fixtures above are deliberately left alone (many tests pin their exact scores),
+# so the standard-error tests get their own fixture log dir whose tasks each run **four samples
+# with varying forced outputs**. That matters: a one-sample task has a degenerate standard error,
+# so only a multi-sample run proves the real Inspect-computed value is threaded from the log
+# header through every aggregate into all three renderers.
+# ---------------------------------------------------------------------------------------
+
+
+@scorer(metrics=[mean()])
+def _fraction_scorer_no_stderr():
+    """Like :func:`_fraction_scorer` but declaring **only** ``mean`` — no ``stderr()`` metric.
+
+    Models a log that carries no standard error at all, so the report must fall back to a bare
+    point estimate (never ``± None``) and must refuse to pool a partial group error.
+    """
+
+    async def score(state, target):  # type: ignore[no-untyped-def]
+        try:
+            value = float(state.output.completion)
+        except ValueError:
+            value = 0.0
+        return Score(value=value)
+
+    return score
+
+
+def _multi_sample_task(
+    name: str,
+    requirement: str,
+    *,
+    samples: int,
+    article: str | None = None,
+    scope: str | None = None,
+    with_stderr: bool = True,
+) -> Task:
+    """A multi-sample fraction-scored task, Brazil-tagged when ``article`` is given."""
+    attribs: dict[str, Any] = {"name": name, "technical_requirement": requirement}
+    if article is not None:
+        attribs["brazil_article"] = article
+        attribs["brazil_scope"] = scope
+
+    @task(**attribs)
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset(
+                [Sample(input="q", target="n/a") for _ in range(samples)]
+            ),
+            solver=[generate()],
+            scorer=_fraction_scorer() if with_stderr else _fraction_scorer_no_stderr(),
+        )
+
+    return _t()
+
+
+def _run_samples_into(log_dir: str, a_task: Task, completions: list[str]) -> None:
+    """Run ``a_task`` with one forced output per sample.
+
+    Order-independent by design: the statistics asserted below (mean and standard error) depend
+    on the *multiset* of sample scores, not on which sample received which forced output.
+    """
+    model = get_model(
+        "mockllm/model",
+        custom_outputs=[
+            ModelOutput.from_content("mockllm/model", c) for c in completions
+        ],
+    )
+    logs = inspect_eval(a_task, model=model, display="none", log_dir=log_dir)
+    assert logs[0].status == "success", f"{a_task} did not run cleanly"
+
+
+# Hand-computable expectations. Inspect's ``stderr()`` is the standard error of the mean via the
+# CLT — the sample standard deviation (n-1) over sqrt(n) — so the expected values are stated as
+# that formula rather than as opaque literals.
+_SE_EVEN = statistics.stdev([1.0, 0.0, 1.0, 0.0]) / math.sqrt(4)  # 0.288675
+_SE_SKEWED = statistics.stdev([1.0, 1.0, 1.0, 0.0]) / math.sqrt(4)  # 0.250000
+
+
+def _hand_task_score(name: str, score: float | None, se: float | None) -> TaskScore:
+    """A minimal hand-built :class:`TaskScore` for the pure aggregate-arithmetic tests."""
+    return TaskScore(
+        task=name,
+        brazil_article="Art. 6, I",
+        brazil_scope="high_risk",
+        technical_requirement="Interpretability",
+        score=score,
+        metric_name="mean",
+        model="mockllm/model",
+        total_samples=4,
+        status="success",
+        stderr=se,
+    )
+
+
+@pytest.fixture(scope="module")
+def stderr_report(tmp_path_factory: pytest.TempPathFactory) -> BrazilComplianceReport:
+    """A four-samples-per-task fixture with non-zero, hand-checkable standard errors.
+
+    Score design (forced outputs -> mean ± se):
+
+    * Art. 5, I  (all_ai):    ``human_deception`` 0.750 ± 0.250 (EU side),
+                              ``human_deception_brazil`` 0.500 ± 0.289
+                              -> delta −0.250 ± 0.382 (quadrature)
+    * Art. 5, III (all_ai):   ``bbq_brazil`` 0.250 ± 0.250, ``bold`` 0.500 ± 0.289
+                              -> article mean 0.375 ± 0.191 (pooled). The EU ``bbq`` is *not*
+                              run, so ``bbq_brazil``'s row has no delta and no delta error.
+    * Art. 6, II-III:         ``contestation_review`` 0.500 with a **stderr-less** scorer
+                              -> no error bar anywhere for that task.
+    * EU-only requirement:    ``arc_challenge`` 0.500 ± 0.289 (unmapped) -> the coverage map's
+                              EU-only row carries a pooled ±.
+    """
+    log_dir = str(tmp_path_factory.mktemp("stderr_logs"))
+
+    # Art. 5, I — the disclosure pair, both sides with a real standard error.
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "human_deception",
+            "Disclosure of AI",
+            samples=4,
+            article="Art. 5, I",
+            scope="all_ai",
+        ),
+        ["1.0", "1.0", "1.0", "0.0"],  # 0.750 ± 0.250
+    )
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "human_deception_brazil",
+            "Disclosure of AI",
+            samples=4,
+            article="Art. 5, I",
+            scope="all_ai",
+        ),
+        ["1.0", "0.0", "1.0", "0.0"],  # 0.500 ± 0.289
+    )
+
+    # Art. 5, III — two Brazil-mapped tasks with *different* standard errors, so the pooled
+    # group formula is non-degenerate.
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "bbq_brazil",
+            "Representation — Absence of Bias",
+            samples=4,
+            article="Art. 5, III",
+            scope="all_ai",
+        ),
+        ["1.0", "0.0", "0.0", "0.0"],  # 0.250 ± 0.250
+    )
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "bold",
+            "Representation — Absence of Bias",
+            samples=4,
+            article="Art. 5, III",
+            scope="all_ai",
+        ),
+        ["1.0", "1.0", "0.0", "0.0"],  # 0.500 ± 0.289
+    )
+
+    # Art. 6, II-III — scored by a scorer that declares no stderr() metric at all.
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "contestation_review",
+            "Societal Alignment",
+            samples=2,
+            article="Art. 6, II-III",
+            scope="high_risk",
+            with_stderr=False,
+        ),
+        ["0.5", "0.5"],  # 0.500, no error bar
+    )
+
+    # An unmapped EU-only requirement, to exercise the coverage map's pooled EU-only error.
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "arc_challenge",
+            "Capabilities, Performance, and Limitations",
+            samples=4,
+        ),
+        ["1.0", "1.0", "0.0", "0.0"],  # 0.500 ± 0.289
+    )
+
+    return build_brazil_report(log_dir)
+
+
+class TestStandardErrors:
+    """Phase 1 — the ``stderr`` the scorers already compute reaches every published number.
+
+    Before iteration 2 the aggregator read one headline point estimate per task and dropped the
+    rest of the metrics dict, so the ``±`` figures in the write-up were compiled by hand outside
+    the tool. These tests pin the whole path: log header -> :class:`TaskScore` -> per-article /
+    side-by-side / coverage aggregates -> Markdown, JSON, and HTML.
+    """
+
+    # -- log header -> TaskScore --------------------------------------------------------
+
+    def test_task_stderr_is_read_from_the_log(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        by_task = {t.task: t for t in stderr_report.brazil_task_scores}
+        assert by_task["human_deception_brazil"].stderr == pytest.approx(_SE_EVEN)
+        assert by_task["bbq_brazil"].stderr == pytest.approx(_SE_SKEWED)
+        assert by_task["bold"].stderr == pytest.approx(_SE_EVEN)
+
+    def test_eu_side_stderr_is_read_too(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        by_task = {t.task: t for t in stderr_report.eu_task_scores}
+        assert by_task["human_deception"].stderr == pytest.approx(_SE_SKEWED)
+
+    def test_headline_metric_resolution_is_unchanged(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        """The standard error is a *sibling* read — it must never become the point estimate."""
+        by_task = {t.task: t for t in stderr_report.brazil_task_scores}
+        assert by_task["human_deception_brazil"].metric_name == "mean"
+        assert by_task["human_deception_brazil"].score == pytest.approx(0.5)
+        assert by_task["bbq_brazil"].score == pytest.approx(0.25)
+
+    def test_stderr_is_none_when_the_scorer_declares_none(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        by_task = {t.task: t for t in stderr_report.brazil_task_scores}
+        assert by_task["contestation_review"].score == pytest.approx(0.5)
+        assert by_task["contestation_review"].stderr is None
+
+    def test_single_sample_task_reports_no_stderr(
+        self, fixture_report: BrazilComplianceReport
+    ) -> None:
+        """A one-observation task must not print ``± 0.000`` and read as infinitely precise.
+
+        Inspect's ``stderr()`` returns a placeholder ``0`` below two samples, so the report drops
+        it — the shared one-sample ``fixture_report`` is exactly that case. This is the guard that
+        keeps ``aia_checklist`` at n=1 (iteration 1's most-criticized figure) from rendering as
+        the most precise number on the scorecard.
+        """
+        by_task = {t.task: t for t in fixture_report.brazil_task_scores}
+        assert by_task["aia_checklist"].total_samples == 1
+        assert by_task["aia_checklist"].stderr is None
+        group = fixture_report.group_for("Arts. 25-28")
+        assert group is not None
+        assert group.mean_stderr is None
+        md = fixture_report.to_markdown()
+        assert "| 0.750 |" in md  # aia_checklist's bare point estimate
+        assert "± 0.000" not in md
+
+    def test_non_finite_stderr_is_treated_as_absent(self) -> None:
+        """An undefined standard error must render as a bare estimate, never as ``± nan``."""
+
+        class _Metric:
+            def __init__(self, value: float) -> None:
+                self.value = value
+
+        assert _stderr_metric({}) is None
+        assert _stderr_metric({"stderr": _Metric(float("nan"))}) is None
+        assert _stderr_metric({"stderr": _Metric(float("inf"))}) is None
+        assert _stderr_metric({"stderr": _Metric(0.125)}) == pytest.approx(0.125)
+
+    # -- aggregates ---------------------------------------------------------------------
+
+    def test_article_group_stderr_pools_member_errors(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        """Art. 5, III holds two Brazil-mapped tasks: sqrt(Σ seᵢ²)/k over both members."""
+        group = stderr_report.group_for("Art. 5, III")
+        assert group is not None
+        assert sorted(t.task for t in group.tasks) == ["bbq_brazil", "bold"]
+        assert group.mean_score == pytest.approx(0.375)
+        expected = math.sqrt(_SE_SKEWED**2 + _SE_EVEN**2) / 2
+        assert group.mean_stderr == pytest.approx(expected)
+
+    def test_single_member_group_stderr_is_that_member(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        group = stderr_report.group_for("Art. 5, I")
+        assert group is not None
+        assert [t.task for t in group.tasks] == ["human_deception_brazil"]
+        assert group.mean_stderr == pytest.approx(_SE_EVEN)
+
+    def test_group_stderr_is_none_when_a_member_lacks_one(self) -> None:
+        """No partial pooling — a group never shows an error bar its evidence can't support."""
+        group = ArticleGroup(
+            article="Art. 6, I",
+            scope="high_risk",
+            tasks=[
+                _hand_task_score("with_se", 0.4, 0.1),
+                _hand_task_score("without_se", 0.6, None),
+            ],
+        )
+        assert group.mean_score == pytest.approx(0.5)
+        assert group.mean_stderr is None
+
+    def test_group_stderr_uses_the_pooled_formula(self) -> None:
+        group = ArticleGroup(
+            article="Art. 6, I",
+            scope="high_risk",
+            tasks=[
+                _hand_task_score("a", 0.4, 0.1),
+                _hand_task_score("b", 0.6, 0.2),
+            ],
+        )
+        assert group.mean_stderr == pytest.approx(math.sqrt(0.1**2 + 0.2**2) / 2)
+
+    def test_group_stderr_ignores_unscored_members(self) -> None:
+        """A task that produced no score can't nullify the error bar of the ones that did."""
+        group = ArticleGroup(
+            article="Art. 6, I",
+            scope="high_risk",
+            tasks=[
+                _hand_task_score("scored", 0.5, 0.1),
+                _hand_task_score("unscored", None, None),
+            ],
+        )
+        assert group.mean_stderr == pytest.approx(0.1)
+
+    def test_empty_group_stderr_is_none(self) -> None:
+        group = ArticleGroup(article="Art. 6, I", scope="high_risk", tasks=[])
+        assert group.mean_score is None
+        assert group.mean_stderr is None
+
+    def test_delta_stderr_propagates_in_quadrature(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        row = stderr_report.row_for("human_deception_brazil")
+        assert row is not None
+        assert row.brazil_stderr == pytest.approx(_SE_EVEN)
+        assert row.eu_stderr == pytest.approx(_SE_SKEWED)
+        assert row.delta == pytest.approx(-0.25)
+        assert row.delta_stderr == pytest.approx(math.sqrt(_SE_EVEN**2 + _SE_SKEWED**2))
+
+    def test_delta_stderr_is_none_without_an_eu_side(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        """``bbq`` was not run, so there is no delta — and therefore no delta error."""
+        row = stderr_report.row_for("bbq_brazil")
+        assert row is not None
+        assert row.has_eu_equivalent is True
+        assert row.eu_score is None
+        assert row.delta is None
+        assert row.delta_stderr is None
+
+    def test_delta_stderr_is_none_for_a_brazil_only_row(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        row = stderr_report.row_for("contestation_review")
+        assert row is not None
+        assert row.has_eu_equivalent is False
+        assert row.delta_stderr is None
+
+    def test_delta_stderr_is_none_when_one_side_lacks_one(self) -> None:
+        row = SideBySideRow(
+            brazil_task="human_deception_brazil",
+            brazil_article="Art. 5, I",
+            brazil_scope="all_ai",
+            brazil_score=0.5,
+            eu_task="human_deception",
+            eu_score=1.0,
+            has_eu_equivalent=True,
+            brazil_stderr=0.1,
+            eu_stderr=None,
+        )
+        assert row.delta == pytest.approx(-0.5)
+        assert row.delta_stderr is None
+
+    def test_coverage_row_carries_a_pooled_eu_only_stderr(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        cov = next(
+            c
+            for c in stderr_report.coverage_by_requirement
+            if c.requirement == "Capabilities, Performance, and Limitations"
+        )
+        assert cov.status == "eu_only"
+        assert cov.eu_only_score == pytest.approx(0.5)
+        assert cov.eu_only_stderr == pytest.approx(_SE_EVEN)
+
+    def test_coverage_row_without_an_eu_score_has_no_stderr(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        cov = next(
+            c
+            for c in stderr_report.coverage_by_requirement
+            if c.requirement == "Cyberattack Resilience"
+        )
+        assert cov.eu_only_score is None
+        assert cov.eu_only_stderr is None
+
+    # -- renderers ----------------------------------------------------------------------
+
+    def test_markdown_renders_score_and_delta_with_stderr(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        md = stderr_report.to_markdown()
+        assert "0.500 ± 0.289" in md  # human_deception_brazil
+        assert "0.750 ± 0.250" in md  # the EU side of the pair
+        assert "0.375 ± 0.191" in md  # Art. 5, III pooled article mean
+        assert "-0.250 ± 0.382" in md  # delta with its propagated error
+
+    def test_markdown_labels_the_stderr_columns(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        md = stderr_report.to_markdown()
+        assert "Score ± se" in md
+        assert "Δ (Brazil − EU) ± se" in md
+        assert "standard error of the mean" in md
+
+    def test_markdown_renders_a_bare_estimate_without_stderr(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        """A stderr-less task shows the point estimate alone — never ``± None``/``± nan``."""
+        md = stderr_report.to_markdown()
+        assert "± None" not in md
+        assert "± nan" not in md
+        assert "| 0.500 |" in md  # contestation_review's bare cell
+
+    def test_json_carries_stderr_keys_throughout(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        data = json.loads(stderr_report.to_json())
+
+        arts = {a["article"]: a for a in data["articles"]}
+        assert arts["Art. 5, III"]["mean_stderr"] == pytest.approx(
+            math.sqrt(_SE_SKEWED**2 + _SE_EVEN**2) / 2
+        )
+        tasks = {t["task"]: t for t in arts["Art. 5, III"]["tasks"]}
+        assert tasks["bbq_brazil"]["stderr"] == pytest.approx(_SE_SKEWED)
+
+        rows = {r["brazil_task"]: r for r in data["eu_brazil_side_by_side"]}
+        pair = rows["human_deception_brazil"]
+        assert pair["brazil_stderr"] == pytest.approx(_SE_EVEN)
+        assert pair["eu_stderr"] == pytest.approx(_SE_SKEWED)
+        assert pair["delta_stderr"] == pytest.approx(
+            math.sqrt(_SE_EVEN**2 + _SE_SKEWED**2)
+        )
+        assert rows["contestation_review"]["brazil_stderr"] is None
+        assert rows["contestation_review"]["delta_stderr"] is None
+
+        cov = {c["requirement"]: c for c in data["coverage_by_requirement"]}
+        assert cov["Capabilities, Performance, and Limitations"][
+            "eu_only_stderr"
+        ] == pytest.approx(_SE_EVEN)
+        assert cov["Cyberattack Resilience"]["eu_only_stderr"] is None
+
+    def test_html_renders_stderr_as_a_subordinate_span(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        doc = stderr_report.to_html()
+        # The style token exists and the error appears as a sibling of the badge...
+        assert ".se {" in doc
+        assert 'class="se">± 0.289<' in doc
+        assert 'class="se">± 0.382<' in doc  # the propagated delta error
+        # ...while the point estimate keeps its band coloring, unchanged.
+        assert 'class="badge warn">0.500</span> <span class="se">± 0.289<' in doc
+
+    def test_html_omits_the_stderr_span_when_absent(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        doc = stderr_report.to_html()
+        assert "± None" not in doc
+        assert "± nan" not in doc
+        # contestation_review's badge is closed by its cell with no `.se` sibling.
+        assert '<span class="badge warn">0.500</span></td>' in doc
+
+    def test_html_stays_self_contained_with_stderr(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        doc = stderr_report.to_html()
+        assert "src=" not in doc
+        assert "href=" not in doc
+        assert "http://" not in doc
+        assert "https://" not in doc

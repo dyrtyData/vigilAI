@@ -29,12 +29,35 @@ Join nuance (decorator-first, mirroring ``vigilai._cli.list._brazil_metadata``):
   in the live registry by name (``get_vigilai_tasks``) and reading its decorator attribs, then
   finally to the requirement→article mapping. The mapping is the *last* resort, never the
   first.
+
+Standard errors (iteration 2, Phase 1)
+--------------------------------------
+
+Every scorer vigilAI runs already declares Inspect's ``stderr()`` metric alongside its point
+estimate — the three custom Brazil scorers via ``@scorer(metrics=[mean(), stderr()])`` and the
+reused upstream ``match`` / ``choice`` scorers via ``@scorer(metrics=[accuracy(), stderr()])`` — so
+``stderr`` is present in **every** ``.eval`` log. The aggregator reads it as a *sibling* of the
+headline metric (:func:`_stderr_metric`; the point-estimate resolution in :func:`_headline_metric`
+is unchanged) and threads it through :class:`TaskScore` → the per-article / side-by-side / coverage
+aggregates → all three renderers. Every published number therefore arrives with its own
+uncertainty, straight from the tool, and no ``±`` table is hand-compiled.
+
+Two deliberate statistical choices:
+
+* **No partial pooling.** A group's standard error (:attr:`ArticleGroup.mean_stderr`,
+  :attr:`RequirementCoverage.eu_only_stderr`) is ``None`` unless *every* scored member carries
+  one — a group must never show an error bar narrower than its evidence supports.
+* **Deltas add in quadrature.** The EU and Brazil sides of a pair are independent runs (different
+  datasets, same scorer), so :attr:`SideBySideRow.delta_stderr` is ``sqrt(se_b² + se_eu²)``. That
+  is what makes "the gap is larger than its uncertainty" a checkable claim rather than an
+  assertion.
 """
 
 from __future__ import annotations
 
 import html
 import json
+import math
 from dataclasses import dataclass
 from datetime import date
 from dataclasses import field
@@ -114,6 +137,19 @@ _REGISTRY_PREFIX = "vigilai/"
 # prefer accuracy, then mean, then fall back to the first available metric so the report never
 # silently drops a score.
 _METRIC_PREFERENCE: tuple[str, ...] = ("accuracy", "mean")
+
+# The metric name Inspect's ``stderr()`` records. Read as a *sibling* of the headline metric (it is
+# never a candidate for :data:`_METRIC_PREFERENCE` — a standard error is not a score).
+_STDERR_METRIC = "stderr"
+
+# Minimum sample count for a reportable standard error. Inspect's ``stderr()`` returns a
+# *placeholder* ``0`` when it has fewer than two observations to estimate from
+# (``if (n - 1) < 1: return 0`` in ``inspect_ai/scorer/_metrics/std.py``). Rendering that verbatim
+# would print a single-observation task as e.g. ``0.983 ± 0.000`` — reading as infinitely precise,
+# which is the exact overconfidence this reporting layer exists to remove. Below two samples the
+# report shows the bare point estimate instead. A genuine ``0.000`` from two or more identically
+# scored samples (what ``mockllm/model`` produces) is a real estimate and *is* shown.
+_MIN_SAMPLES_FOR_STDERR = 2
 
 
 def _bare_task_name(task: str) -> str:
@@ -195,6 +231,39 @@ def _headline_metric(metrics: dict[str, Any]) -> tuple[str | None, float | None]
     return None, None
 
 
+def _stderr_metric(metrics: dict[str, Any]) -> float | None:
+    """Read a score's ``stderr`` metric from the same metrics dict as the headline value.
+
+    ``metrics`` maps metric name -> object with a ``.value`` (the log-header
+    ``EvalScore.metrics``). Returns ``None`` when the scorer declared no ``stderr()`` metric, or
+    when the recorded value is not finite — Inspect reports an undefined standard error for a
+    degenerate sample set, and the renderers must show a bare point estimate rather than
+    ``± nan``.
+    """
+    metric = metrics.get(_STDERR_METRIC)
+    if metric is None:
+        return None
+    value = float(metric.value)
+    if not math.isfinite(value):
+        return None
+    return value
+
+
+def _pooled_stderr(stderrs: list[float | None]) -> float | None:
+    """Standard error of the *mean* of ``k`` independent estimates: ``sqrt(Σ seᵢ²) / k``.
+
+    Used for both aggregate error bars (per-article means and the coverage map's EU-only mean).
+    Returns ``None`` if the set is empty **or if any member lacks a standard error**: pooling over
+    a partial set would yield an error bar narrower than the evidence supports, so the report
+    prefers to show none at all (see the module docstring — this is a deliberate choice, not an
+    oversight).
+    """
+    if not stderrs or any(se is None for se in stderrs):
+        return None
+    k = len(stderrs)
+    return math.sqrt(sum(se * se for se in stderrs if se is not None)) / k
+
+
 @dataclass(frozen=True)
 class TaskScore:
     """A single task's resolved score plus its Brazil mapping.
@@ -209,6 +278,9 @@ class TaskScore:
         model: The evaluated model id.
         total_samples: Number of samples scored.
         status: The eval status (``"success"`` etc.).
+        stderr: The standard error of ``score``, read from the same metrics dict (Inspect's
+            ``stderr()`` metric), or ``None`` when the scorer declared none. Appended with a
+            default so every existing construction is unaffected.
     """
 
     task: str
@@ -220,6 +292,7 @@ class TaskScore:
     model: str | None
     total_samples: int
     status: str
+    stderr: float | None = None
 
     @property
     def is_brazil(self) -> bool:
@@ -243,6 +316,15 @@ class ArticleGroup:
             return None
         return sum(values) / len(values)
 
+    @property
+    def mean_stderr(self) -> float | None:
+        """Standard error of :attr:`mean_score` — ``sqrt(Σ seᵢ²)/k`` over the scored members.
+
+        ``None`` when no member is scored, or when any scored member lacks a standard error (no
+        partial pooling; see :func:`_pooled_stderr`).
+        """
+        return _pooled_stderr([t.stderr for t in self.tasks if t.score is not None])
+
 
 @dataclass(frozen=True)
 class SideBySideRow:
@@ -251,6 +333,10 @@ class SideBySideRow:
     For a same-scorer pair, both ``eu_score`` and ``brazil_score`` are populated and ``delta``
     is ``brazil_score - eu_score``. For a Brazil-only task, ``eu_task`` / ``eu_score`` are
     ``None`` and ``has_eu_equivalent`` is ``False`` (the headline "no EU equivalent" finding).
+
+    ``brazil_stderr`` / ``eu_stderr`` carry each side's standard error (appended with defaults so
+    existing constructions are unaffected), and :attr:`delta_stderr` propagates them, so the delta
+    itself is reported with an error bar.
     """
 
     brazil_task: str
@@ -260,6 +346,8 @@ class SideBySideRow:
     eu_task: str | None
     eu_score: float | None
     has_eu_equivalent: bool
+    brazil_stderr: float | None = None
+    eu_stderr: float | None = None
 
     @property
     def delta(self) -> float | None:
@@ -267,6 +355,18 @@ class SideBySideRow:
         if self.eu_score is None or self.brazil_score is None:
             return None
         return self.brazil_score - self.eu_score
+
+    @property
+    def delta_stderr(self) -> float | None:
+        """Standard error of :attr:`delta` — ``sqrt(brazil_stderr² + eu_stderr²)``.
+
+        The two sides are **independent runs** (different datasets scored by the same scorer), so
+        their errors add in quadrature. ``None`` when the row has no delta or either side lacks a
+        standard error.
+        """
+        if self.delta is None or self.brazil_stderr is None or self.eu_stderr is None:
+            return None
+        return math.sqrt(self.brazil_stderr**2 + self.eu_stderr**2)
 
 
 @dataclass(frozen=True)
@@ -287,6 +387,8 @@ class RequirementCoverage:
         eu_only_score: Mean EU-task score for this requirement when there is no Brazil benchmark
             (context for an EU-only requirement that was nonetheless exercised), else ``None``.
         ran: True if any task for this requirement appeared in the run at all.
+        eu_only_stderr: Standard error of ``eu_only_score``, pooled over the requirement's scored
+            tasks (``None`` if absent or if any contributing task lacks one).
     """
 
     requirement: str
@@ -294,6 +396,7 @@ class RequirementCoverage:
     has_brazil_benchmark: bool
     eu_only_score: float | None
     ran: bool
+    eu_only_stderr: float | None = None
 
     @property
     def status(self) -> str:
@@ -350,7 +453,13 @@ class BrazilComplianceReport:
     # -- rendering -----------------------------------------------------------------------
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialize the report to a plain JSON-able dict (the ``--json`` view)."""
+        """Serialize the report to a plain JSON-able dict (the ``--json`` view).
+
+        Every score is accompanied by its standard error: ``stderr`` per task, ``mean_stderr`` per
+        article group, ``brazil_stderr`` / ``eu_stderr`` / ``delta_stderr`` per side-by-side row,
+        and ``eu_only_stderr`` per coverage row. A ``null`` means the underlying log carried no
+        usable standard error (or, for an aggregate, that not every member did).
+        """
         return {
             "log_dir": self.log_dir,
             "models": self.models,
@@ -359,10 +468,12 @@ class BrazilComplianceReport:
                     "article": group.article,
                     "scope": group.scope,
                     "mean_score": group.mean_score,
+                    "mean_stderr": group.mean_stderr,
                     "tasks": [
                         {
                             "task": t.task,
                             "score": t.score,
+                            "stderr": t.stderr,
                             "metric": t.metric_name,
                             "samples": t.total_samples,
                             "technical_requirement": t.technical_requirement,
@@ -378,9 +489,12 @@ class BrazilComplianceReport:
                     "brazil_article": row.brazil_article,
                     "brazil_scope": row.brazil_scope,
                     "brazil_score": row.brazil_score,
+                    "brazil_stderr": row.brazil_stderr,
                     "eu_task": row.eu_task,
                     "eu_score": row.eu_score,
+                    "eu_stderr": row.eu_stderr,
                     "delta": row.delta,
+                    "delta_stderr": row.delta_stderr,
                     "has_eu_equivalent": row.has_eu_equivalent,
                 }
                 for row in self.side_by_side
@@ -391,6 +505,7 @@ class BrazilComplianceReport:
                     "brazil_article": cov.brazil_article,
                     "has_brazil_benchmark": cov.has_brazil_benchmark,
                     "eu_only_score": cov.eu_only_score,
+                    "eu_only_stderr": cov.eu_only_stderr,
                     "ran": cov.ran,
                     "status": cov.status,
                 }
@@ -433,6 +548,28 @@ def _fmt_delta(value: float | None) -> str:
     return f"{value:+.3f}"
 
 
+def _fmt_score_se(value: float | None, se: float | None) -> str:
+    """Format a score with its standard error — e.g. ``"0.524 ± 0.112"``.
+
+    Falls back to the **bare point estimate** when no standard error is available (never
+    ``± None``), and to ``"—"`` when there is no score at all.
+    """
+    if value is None:
+        return "—"
+    if se is None:
+        return f"{value:.3f}"
+    return f"{value:.3f} ± {se:.3f}"
+
+
+def _fmt_delta_se(value: float | None, se: float | None) -> str:
+    """Format a signed delta with its propagated standard error — e.g. ``"-0.451 ± 0.118"``."""
+    if value is None:
+        return "—"
+    if se is None:
+        return f"{value:+.3f}"
+    return f"{value:+.3f} ± {se:.3f}"
+
+
 def _scope_suffix(scope: str | None) -> str:
     return f" ({scope})" if scope else ""
 
@@ -463,23 +600,33 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
         "(1.0 = full compliance on the benchmark)."
     )
     lines.append("")
+    lines.append(
+        "`± se` is the **standard error of the mean** computed by the Inspect scorer and read "
+        "from this run's `.eval` logs — not hand-compiled. Per-article means pool the member "
+        "errors as `sqrt(Σ seᵢ²)/k`; EU↔Brazil deltas propagate theirs as "
+        "`sqrt(se_brazil² + se_eu²)` (independent runs). A score shown without `±` came from a "
+        "log that carried no usable standard error, and an aggregate is shown without `±` unless "
+        "every member carried one."
+    )
+    lines.append("")
 
     # -- Per-article section ------------------------------------------------------------
     lines.append("## Compliance by Brazil article")
     lines.append("")
     if report.article_groups:
-        lines.append("| Brazil article | Scope | Task | EU technical requirement | Score |")
+        lines.append("| Brazil article | Scope | Task | EU technical requirement | Score ± se |")
         lines.append("|---|---|---|---|---|")
         for group in report.article_groups:
             for task in group.tasks:
                 lines.append(
                     f"| {group.article} | {group.scope or '—'} | `{task.task}` | "
-                    f"{task.technical_requirement or '—'} | {_fmt_score(task.score)} |"
+                    f"{task.technical_requirement or '—'} | "
+                    f"{_fmt_score_se(task.score, task.stderr)} |"
                 )
             # Per-article aggregate row (only meaningful when >1 task or for emphasis).
             lines.append(
                 f"| **{group.article} — mean** | {group.scope or '—'} |  |  | "
-                f"**{_fmt_score(group.mean_score)}** |"
+                f"**{_fmt_score_se(group.mean_score, group.mean_stderr)}** |"
             )
     else:
         lines.append("_No Brazil-mapped tasks found in this run._")
@@ -495,21 +642,23 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
     )
     lines.append("")
     lines.append(
-        "| Brazil task | Brazil article | Brazil score | EU task | EU score | Δ (Brazil − EU) |"
+        "| Brazil task | Brazil article | Brazil score ± se | EU task | EU score ± se | "
+        "Δ (Brazil − EU) ± se |"
     )
     lines.append("|---|---|---|---|---|---|")
     for row in report.side_by_side:
         if row.has_eu_equivalent:
             eu_task = f"`{row.eu_task}`"
-            eu_score = _fmt_score(row.eu_score)
-            delta = _fmt_delta(row.delta)
+            eu_score = _fmt_score_se(row.eu_score, row.eu_stderr)
+            delta = _fmt_delta_se(row.delta, row.delta_stderr)
         else:
             eu_task = "_no EU equivalent_"
             eu_score = "—"
             delta = "—"
         article = f"{row.brazil_article}{_scope_suffix(row.brazil_scope)}" if row.brazil_article else "—"
         lines.append(
-            f"| `{row.brazil_task}` | {article} | {_fmt_score(row.brazil_score)} | "
+            f"| `{row.brazil_task}` | {article} | "
+            f"{_fmt_score_se(row.brazil_score, row.brazil_stderr)} | "
             f"{eu_task} | {eu_score} | {delta} |"
         )
     lines.append("")
@@ -525,13 +674,14 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
     )
     lines.append("")
     lines.append(
-        "| EU technical requirement | Brazil article | Coverage | EU-only score |"
+        "| EU technical requirement | Brazil article | Coverage | EU-only score ± se |"
     )
     lines.append("|---|---|---|---|")
     for cov in report.coverage_by_requirement:
         lines.append(
             f"| {cov.requirement} | {cov.brazil_article or '—'} | "
-            f"{_COVERAGE_MARK[cov.status]} | {_fmt_score(cov.eu_only_score)} |"
+            f"{_COVERAGE_MARK[cov.status]} | "
+            f"{_fmt_score_se(cov.eu_only_score, cov.eu_only_stderr)} |"
         )
     lines.append("")
     return "\n".join(lines)
@@ -614,6 +764,7 @@ tr.mean td { font-weight: 700; background: #f8f9fb; border-top: 2px solid var(--
 .badge.warn { color: var(--warn); background: var(--warn-bg); }
 .badge.bad  { color: var(--bad);  background: var(--bad-bg); }
 .badge.na   { color: var(--na);   background: var(--na-bg); }
+.se { color: var(--muted); font-size: .8em; font-variant-numeric: tabular-nums; }
 .no-eu { color: var(--muted); font-style: italic; }
 td.cov, th.cov { white-space: nowrap; }
 .cov-pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px;
@@ -645,13 +796,25 @@ def _html_delta_badge(value: float | None) -> str:
     return f'<span class="badge {_delta_band(value)}">{_esc(_fmt_delta(value))}</span>'
 
 
+def _html_se(se: float | None) -> str:
+    """A muted ``± se`` sibling of a badge, or ``""`` when there is no standard error.
+
+    Deliberately *outside* the badge: the point estimate keeps its band coloring
+    (:func:`_score_band` / :func:`_delta_band` are untouched) and the error bar reads as
+    subordinate to it rather than competing with it.
+    """
+    if se is None:
+        return ""
+    return f' <span class="se">{_esc(f"± {se:.3f}")}</span>'
+
+
 def _render_article_table(report: BrazilComplianceReport) -> list[str]:
     rows: list[str] = []
     rows.append("<table>")
     rows.append(
         "<thead><tr>"
         "<th>Brazil article</th><th>Scope</th><th>Task</th>"
-        "<th>EU technical requirement</th><th class='score'>Score</th>"
+        "<th>EU technical requirement</th><th class='score'>Score ± se</th>"
         "</tr></thead>"
     )
     rows.append("<tbody>")
@@ -667,7 +830,8 @@ def _render_article_table(report: BrazilComplianceReport) -> list[str]:
                 f"<td>{_esc(group.scope or '—')}</td>"
                 f"<td><code class='task'>{_esc(task.task)}</code></td>"
                 f"<td>{_esc(task.technical_requirement or '—')}</td>"
-                f"<td class='score'>{_html_badge(task.score, _score_band(task.score))}</td>"
+                f"<td class='score'>{_html_badge(task.score, _score_band(task.score))}"
+                f"{_html_se(task.stderr)}</td>"
                 "</tr>"
             )
         rows.append(
@@ -675,7 +839,8 @@ def _render_article_table(report: BrazilComplianceReport) -> list[str]:
             f"<td>{_esc(group.article)} — mean</td>"
             f"<td>{_esc(group.scope or '—')}</td>"
             "<td></td><td></td>"
-            f"<td class='score'>{_html_badge(group.mean_score, _score_band(group.mean_score))}</td>"
+            f"<td class='score'>{_html_badge(group.mean_score, _score_band(group.mean_score))}"
+            f"{_html_se(group.mean_stderr)}</td>"
             "</tr>"
         )
     rows.append("</tbody></table>")
@@ -687,8 +852,9 @@ def _render_side_by_side_table(report: BrazilComplianceReport) -> list[str]:
     rows.append("<table>")
     rows.append(
         "<thead><tr>"
-        "<th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score</th>"
-        "<th>EU task</th><th class='score'>EU score</th><th class='score'>Δ (Brazil − EU)</th>"
+        "<th>Brazil task</th><th>Brazil article</th><th class='score'>Brazil score ± se</th>"
+        "<th>EU task</th><th class='score'>EU score ± se</th>"
+        "<th class='score'>Δ (Brazil − EU) ± se</th>"
         "</tr></thead>"
     )
     rows.append("<tbody>")
@@ -700,8 +866,10 @@ def _render_side_by_side_table(report: BrazilComplianceReport) -> list[str]:
         )
         if row.has_eu_equivalent:
             eu_task_cell = f"<code class='task'>{_esc(row.eu_task)}</code>"
-            eu_score_cell = _html_badge(row.eu_score, _score_band(row.eu_score))
-            delta_cell = _html_delta_badge(row.delta)
+            eu_score_cell = _html_badge(
+                row.eu_score, _score_band(row.eu_score)
+            ) + _html_se(row.eu_stderr)
+            delta_cell = _html_delta_badge(row.delta) + _html_se(row.delta_stderr)
         else:
             eu_task_cell = "<span class='no-eu'>no EU equivalent</span>"
             eu_score_cell = "<span class='badge na'>—</span>"
@@ -710,7 +878,8 @@ def _render_side_by_side_table(report: BrazilComplianceReport) -> list[str]:
             "<tr>"
             f"<td><code class='task'>{_esc(row.brazil_task)}</code></td>"
             f"<td>{_esc(article)}</td>"
-            f"<td class='score'>{_html_badge(row.brazil_score, _score_band(row.brazil_score))}</td>"
+            f"<td class='score'>{_html_badge(row.brazil_score, _score_band(row.brazil_score))}"
+            f"{_html_se(row.brazil_stderr)}</td>"
             f"<td>{eu_task_cell}</td>"
             f"<td class='score'>{eu_score_cell}</td>"
             f"<td class='score'>{delta_cell}</td>"
@@ -726,7 +895,7 @@ def _render_coverage_table(report: BrazilComplianceReport) -> list[str]:
     rows.append(
         "<thead><tr>"
         "<th>EU technical requirement</th><th>Brazil article</th>"
-        "<th class='cov'>Coverage</th><th class='score'>EU-only score</th>"
+        "<th class='cov'>Coverage</th><th class='score'>EU-only score ± se</th>"
         "</tr></thead>"
     )
     rows.append("<tbody>")
@@ -737,6 +906,7 @@ def _render_coverage_table(report: BrazilComplianceReport) -> list[str]:
         )
         eu_only_cell = (
             _html_badge(cov.eu_only_score, _score_band(cov.eu_only_score))
+            + _html_se(cov.eu_only_stderr)
             if cov.eu_only_score is not None
             else "<span class='badge na'>—</span>"
         )
@@ -799,6 +969,15 @@ def _render_html(report: BrazilComplianceReport) -> str:
         '<span class="badge warn">0.50–0.80</span> '
         '<span class="badge bad">&lt; 0.50</span>'
     )
+    parts.append(
+        '<p class="note"><span class="se">± se</span> is the <strong>standard error of the '
+        "mean</strong> computed by the Inspect scorer and read from this run&#39;s "
+        "<code>.eval</code> logs — not hand-compiled. Per-article means pool the member errors "
+        "as <code>sqrt(&Sigma; se&sup2;)/k</code>; EU↔Brazil deltas propagate theirs as "
+        "<code>sqrt(se_brazil&sup2; + se_eu&sup2;)</code> (independent runs). A score shown "
+        "without <code>±</code> came from a log carrying no usable standard error, and an "
+        "aggregate is shown without one unless every member carried one.</p>"
+    )
 
     # -- Per-article section ------------------------------------------------------------
     parts.append("<h2>Compliance by Brazil article</h2>")
@@ -849,12 +1028,20 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
 
     score_value: float | None = None
     metric_name: str | None = None
+    stderr_value: float | None = None
     total_samples = 0
     if log.results is not None:
         total_samples = log.results.total_samples
         if log.results.scores:
-            # A task usually has a single score; take the first (its headline metric).
-            metric_name, score_value = _headline_metric(log.results.scores[0].metrics)
+            # A task usually has a single score; take the first (its headline metric). The
+            # standard error is read from the *same* metrics dict — a sibling of the point
+            # estimate, not a competing one.
+            metrics = log.results.scores[0].metrics
+            metric_name, score_value = _headline_metric(metrics)
+            stderr_value = _stderr_metric(metrics)
+            if total_samples < _MIN_SAMPLES_FOR_STDERR:
+                # Fewer than two observations: Inspect's 0 is a placeholder, not an estimate.
+                stderr_value = None
 
     return TaskScore(
         task=task_name,
@@ -866,6 +1053,7 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
         model=spec.model,
         total_samples=total_samples,
         status=log.status,
+        stderr=stderr_value,
     )
 
 
@@ -914,7 +1102,8 @@ def _build_side_by_side(
     A pair row is emitted for each Brazil task in :data:`EU_BRAZIL_PAIRS`; its EU score is
     taken from the EU counterpart's run in the same log dir (``None`` if that EU task was not
     run). Every other Brazil-mapped task becomes a Brazil-only row (``has_eu_equivalent`` =
-    ``False``).
+    ``False``). Both sides' standard errors ride along so the row can report
+    :attr:`SideBySideRow.delta_stderr`.
     """
     paired_rows: list[SideBySideRow] = []
     brazil_only_rows: list[SideBySideRow] = []
@@ -932,6 +1121,8 @@ def _build_side_by_side(
                     eu_task=eu_name,
                     eu_score=eu_score_obj.score if eu_score_obj else None,
                     has_eu_equivalent=True,
+                    brazil_stderr=task.stderr,
+                    eu_stderr=eu_score_obj.stderr if eu_score_obj else None,
                 )
             )
         else:
@@ -944,6 +1135,8 @@ def _build_side_by_side(
                     eu_task=None,
                     eu_score=None,
                     has_eu_equivalent=False,
+                    brazil_stderr=task.stderr,
+                    eu_stderr=None,
                 )
             )
 
@@ -966,6 +1159,8 @@ def _build_coverage(all_scores: list[TaskScore]) -> list[RequirementCoverage]:
       when only an EU task ran), else ``None``.
     * **eu_only_score** — when there is no Brazil benchmark, the mean headline score of the run's
       tasks for this requirement (context for an exercised-but-EU-only requirement), else ``None``.
+      **eu_only_stderr** pools the contributing tasks' standard errors the same way
+      :attr:`ArticleGroup.mean_stderr` does (``None`` unless every contributor carried one).
     * **ran** — True if any task for this requirement appeared in the run.
     """
     scores_by_req: dict[str, list[TaskScore]] = {}
@@ -992,12 +1187,16 @@ def _build_coverage(all_scores: list[TaskScore]) -> list[RequirementCoverage]:
             if mapped is not None:
                 article = mapped[0]
 
-        # EU-only score: mean of the requirement's run scores when there is no Brazil benchmark.
+        # EU-only score: mean of the requirement's run scores when there is no Brazil benchmark,
+        # with the same pooled standard error the per-article means use.
         eu_only_score: float | None = None
+        eu_only_stderr: float | None = None
         if not has_brazil:
-            values = [t.score for t in req_all if t.score is not None]
+            scored = [t for t in req_all if t.score is not None]
+            values = [t.score for t in scored if t.score is not None]
             if values:
                 eu_only_score = sum(values) / len(values)
+                eu_only_stderr = _pooled_stderr([t.stderr for t in scored])
 
         coverage.append(
             RequirementCoverage(
@@ -1006,6 +1205,7 @@ def _build_coverage(all_scores: list[TaskScore]) -> list[RequirementCoverage]:
                 has_brazil_benchmark=has_brazil,
                 eu_only_score=eu_only_score,
                 ran=ran,
+                eu_only_stderr=eu_only_stderr,
             )
         )
     return coverage

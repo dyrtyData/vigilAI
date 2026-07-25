@@ -44,9 +44,15 @@ logs/
 docs/task-artifacts/*
 !docs/task-artifacts/03-design-discussion.md
 !docs/task-artifacts/02-research.md
+# The iteration-2 implementation log IS the committed run record the paper cites, and the file
+# both machines (Diana / Ian) append their run records to — it must be tracked.
+!docs/task-artifacts/iteration-2-implementation-log.md
 
 # Local Claude settings — may contain API keys, never commit/digest
 .claude/settings.local.json
 
 # Large media (hosted on NotebookLM; linked from README to keep the repo lightweight)
 report/*.mp4
+
+# Riptide artifacts (cloud-synced)
+.humanlayer/tasks/

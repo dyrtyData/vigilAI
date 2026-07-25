@@ -211,6 +211,38 @@ Art. 6 triad visible. The **6-model dossier** [`reports/multimodel-scorecard.htm
 (one model per page; rebuild with `uv run python reports/build_multimodel_scorecard.py`) collects a
 scorecard page for every model in the panel.
 
+### Standard errors — read from the logs, not compiled by hand
+
+Every score the report prints carries its **standard error of the mean** (`± se`), in all three
+views: `0.524 ± 0.112` in Markdown, a muted `± 0.112` next to the band-colored badge in the HTML
+scorecard, and explicit keys in JSON. The value is not recomputed here — every vigilAI scorer
+already declares Inspect's `stderr()` metric alongside its point estimate (`@scorer(metrics=[mean(),
+stderr()])` for the three Brazil rubric/checklist scorers, `[accuracy(), stderr()]` for the reused
+upstream `match` / `choice` scorers), so `stderr` is present in every `.eval` log and the aggregator
+simply reads it as a sibling of the headline metric. **This supersedes the hand-compiled `±` tables
+in [`reports/RESULTS.md`](reports/RESULTS.md)** (iteration 1 transcribed them out of `inspect view`
+by hand): from iteration 2 on, no `±` in the paper exists that `vigilai report` did not print.
+
+How the aggregates combine — also stated in the report output itself, so the scorecard is readable
+standalone:
+
+- **Per-article and EU-only means** pool their members as `sqrt(Σ seᵢ²)/k`. If *any* scored member
+  lacks a standard error, the aggregate shows none — a group must never display an error bar
+  narrower than its evidence supports.
+- **EU↔Brazil deltas** propagate in quadrature, `sqrt(se_brazil² + se_eu²)`, because the two sides
+  are independent runs of the same scorer. This is what makes a gap claim *checkable* rather than
+  asserted: a Δ of −0.40 carrying ±0.19 clears its own uncertainty about twice over, while a Δ of
+  −0.10 carrying the same bar does not — and the report now shows you which one you have.
+- **Below two samples there is no `±` at all.** Inspect's `stderr()` returns a placeholder `0` when
+  it has fewer than two observations, and printing `0.983 ± 0.000` for a single-observation task
+  would read as infinitely precise. A genuine `0.000` from two or more identically scored samples
+  (what `mockllm/model` produces) is a real estimate and is shown.
+
+The `--json` view gained keys for this: `stderr` per task, `mean_stderr` per article group,
+`brazil_stderr` / `eu_stderr` / `delta_stderr` per side-by-side row, and `eu_only_stderr` per
+coverage row. A `null` means the underlying log carried no usable standard error (or, for an
+aggregate, that not every member did).
+
 Every report (Markdown, JSON, and HTML) also includes a **Brazil compliance coverage map** across
 **all nine** COMPL-AI technical requirements — not just the four (of nine) that carry a bespoke
 Brazil benchmark. Each
@@ -240,11 +272,14 @@ explicit constant (`EU_BRAZIL_PAIRS` in
 > Scaled runs: `anthropic/claude-haiku-4-5` and `anthropic/claude-sonnet-4-6` — full small sets
 > + `bbq`@100, **10 epochs**, temperature 1.0, seed 42 — cross-checked on local
 > `ollama/llama3.1:8b` ($0). **Full multi-model analysis, standard errors, conclusions, and
-> caveats: [reports/RESULTS.md](reports/RESULTS.md).**
+> caveats: [reports/RESULTS.md](reports/RESULTS.md).** Those `±` figures were compiled **by hand**
+> in iteration 1; `vigilai report` now prints its own (see [Standard errors](#standard-errors--read-from-the-logs-not-compiled-by-hand)),
+> and the iteration-2 re-runs replace them with tool output.
 
 Per-article report (Claude Haiku 4.5, scaled, all **5** Brazil benchmarks on the deepened set),
 verbatim from `uv run vigilai report logs/<run>` — the run behind
-[`reports/scorecard.html`](reports/scorecard.html):
+[`reports/scorecard.html`](reports/scorecard.html). This is the **iteration-1** run, so its score
+column carries no `± se`; current output adds one to every scored row:
 
 ```markdown
 # Brazil PL 2338/2023 — Compliance Report
