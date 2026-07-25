@@ -13,15 +13,17 @@ so the same input produces byte-identical output. ``tests/test_bbq_brazil.py`` p
 (re-render and compare), mirroring the ``make default-config`` convention the repo already uses.
 
 Why a generator rather than more hand-authoring, and why not an LLM: iteration 2 needs
-``bbq_brazil`` at 100 scenarios / 200 samples to bring the total standard error from ≈0.075 to
-≈0.035, and LLM-drafted bias probes scored by LLMs would introduce a circularity a reviewer
-would rightly flag (design discussion, Resolved Q3). Automation raises n and balance; it is
-**not** community validation — that remains documented-as-pending (Phase 10 protocol).
+``bbq_brazil`` at 100 scenarios (400 samples after Phase 2b's polarity pair) for coverage and
+per-axis balance, and LLM-drafted bias probes scored by LLMs would introduce a circularity a
+reviewer would rightly flag (design discussion, Resolved Q3). Automation raises n and balance; it
+is **not** community validation — that remains documented-as-pending (Phase 10 protocol). And note
+that the four samples of one scenario are *not* independent observations, so the printed standard
+error is a lower bound — see the ``dataset`` module docstring.
 
 What this file guarantees (all enforced before it will write anything, and re-checked by tests):
 
 * exactly ``CategoryPlan.target`` scenarios per category, so the finished dataset is balanced at
-  20 scenarios / 40 samples per category across all five axes;
+  20 scenarios / 80 samples per category across all five axes;
 * no ``(pair, template)`` combination is used twice, and pairs/templates are cycled evenly;
 * **no incompatible ``(pair, template)`` combination is emitted at all** — a pair that is not
   role-neutral names the templates it fits, and a situation that cannot perceive a marker names
@@ -30,9 +32,12 @@ What this file guarantees (all enforced before it will write anything, and re-ch
 * the stereotyped person alternates between answer slots A and B, so the disambiguated answer
   letter is not a positional giveaway;
 * the disambiguating sentence establishes the stereotyped person's merit **and names the other
-  person**, who is therefore the correct disambiguated answer;
-* the question asks about a **fact**, never about a third party's suspicion or perception, which
-  would make the stereotype-consistent answer the truthful one (review finding A3);
+  person** — so it licenses the correct disambiguated answer under *both* question polarities (the
+  contrast person under the negative question, the stereotyped person under the non-negative one);
+* **both** questions ask about a **fact**, never about a third party's suspicion or perception,
+  which would make the stereotype-consistent answer the truthful one (review finding A3);
+* every template carries a non-negative question that differs from its negative one, so no
+  scenario silently reintroduces review finding A1 for its own samples;
 * every placeholder is substituted, pt-BR gender agreement matches the pair's declared gender,
   and no scenario or prompt is a duplicate of another.
 
@@ -45,6 +50,7 @@ from __future__ import annotations
 
 import hashlib
 import sys
+import types
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -52,6 +58,39 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+
+# --- Bootstrap: never parse the file this generator writes -------------------------------
+#
+# The generator imports ``BrazilBBQScenario`` from ``vigilai.tasks.bbq_brazil.scenario``, and
+# importing any submodule runs the package ``__init__``, which chains
+# ``__init__ → bbq_brazil → dataset → generated``. So a plain import *does* load the committed
+# ``generated.py`` — and if that file is stale in a way that no longer constructs (which is exactly
+# what happens the moment ``BrazilBBQScenario`` gains a required field, as ``question_nonneg`` did
+# in Phase 2b), the generator cannot even start, and the only way out is to hand-edit the generated
+# file it exists to own.
+#
+# Pre-registering an empty stub under that module name makes the documented design property
+# ("the generator imports only from ``scenario``, so it never depends on the file it writes")
+# actually true: ``dataset`` binds ``GENERATED_SCENARIOS = []`` from the stub, the package
+# ``__init__`` succeeds, and ``scenario.BrazilBBQScenario`` is the real class object — so the
+# scenarios this module builds still compare equal to the ones the committed literals produce,
+# which the drift guard relies on.
+#
+# **Scoped to ``__main__`` on purpose.** Only the script entry point needs the bootstrap. Doing it
+# unconditionally would mean that a test process which happened to ``import
+# generate_brazil_scenarios`` *before* ``vigilai.tasks.bbq_brazil.dataset`` would leave the whole
+# suite looking at 22 scenarios instead of 100 — an order-dependent failure that would be
+# miserable to diagnose. Imported as a module, this file loads the committed data normally.
+#
+# **Consequence when it does apply:** inside the generator *process*
+# ``vigilai.tasks.bbq_brazil.dataset.ALL_SCENARIOS`` holds only the 22 hand-authored pilot rows.
+# Nothing here imports ``dataset``, and nothing here may start to — read the committed data through
+# the test suite instead.
+if __name__ == "__main__" and "vigilai.tasks.bbq_brazil.generated" not in sys.modules:
+    _stub = types.ModuleType("vigilai.tasks.bbq_brazil.generated")
+    _stub.GENERATED_SCENARIOS = []  # type: ignore[attr-defined]
+    sys.modules["vigilai.tasks.bbq_brazil.generated"] = _stub
 
 from brazil_term_banks import AGREEMENT_STEMS  # noqa: E402
 from brazil_term_banks import CATEGORY_PLANS  # noqa: E402
@@ -89,8 +128,10 @@ DIGEST_MARKER = "# content-sha256: "
 # inside a normal review width without any dependency on a formatter.
 _WRAP_WIDTH = 76
 
-# Answer letters for the two person choices (the Unknown option is the third; see
-# ``dataset._choices_for``).
+# **Canonical** answer slots for the two person choices — the Unknown option is the third; see
+# ``dataset._canonical_choices``. These are the slots ``disambiguated_answer`` /
+# ``stereotyped_answer`` name, *not* the letters a model sees: since Phase 2b the presented order is
+# shuffled per sample (``dataset._presentation``).
 _SLOT_A = "A"
 _SLOT_B = "B"
 
@@ -170,6 +211,7 @@ def _scenario_for(assignment: _Assignment) -> BrazilBBQScenario:
         ambiguous_context=_fill(template.situation, assignment),
         disambiguating_context=_fill(template.disambiguation, assignment),
         question=_fill(template.question, assignment),
+        question_nonneg=_fill(template.question_nonneg, assignment),
         disambiguated_answer=assignment.disambiguated_slot,
         stereotyped_answer=assignment.stereotyped_slot,
         groups=assignment.pair.groups,
@@ -203,6 +245,15 @@ def _assignments_for(plan: CategoryPlan) -> list[_Assignment]:
       balance; it only shifts which slot the next emitted scenario uses.
     * The target must fit inside the *compatible* combination count, not the raw product, or the
       traversal would run out of passes. Checked here and again in :func:`validate_term_banks`.
+
+    **Why ``target <= affordable`` is sufficient**, and not merely necessary: across its
+    ``len(templates)`` passes the diagonal visits pair ``i`` against template ``(i + d) % T`` for
+    every ``d``, so it enumerates **every** (pair, template) combination exactly once — the whole
+    product, not a subset of it. Every compatible combination is therefore reachable, and the
+    trailing ``raise`` below cannot fire once the affordability check passes. That is stated here
+    because the pragma on it used to credit :func:`validate_term_banks`, which only checks the
+    *count*; the reachability comes from the traversal's own coverage (third review round,
+    Section H).
     """
     pairs = plan.pairs
     templates = plan.templates
@@ -226,7 +277,11 @@ def _assignments_for(plan: CategoryPlan) -> list[_Assignment]:
                 continue
             stereotyped_slot = _SLOT_B if len(assignments) % 2 else _SLOT_A
             assignments.append(_Assignment(pair, template, stereotyped_slot))
-    if len(assignments) != plan.target:  # pragma: no cover - guarded by validate_term_banks
+    # Unreachable because the diagonal enumerates the *whole* pair × template product (see the
+    # docstring), so `target <= affordable` guarantees `target` compatible combinations are visited.
+    # Kept as a refusal rather than deleted: it is the one failure the affordability count alone
+    # would not catch if the traversal were ever changed to visit a subset.
+    if len(assignments) != plan.target:  # pragma: no cover - see the docstring's coverage note
         raise ValueError(
             f"{plan.category}: the diagonal traversal emitted {len(assignments)} of "
             f"{plan.target} scenarios — {affordable} compatible combinations exist, but not "
@@ -369,6 +424,31 @@ def _compatibility_problems(plan: CategoryPlan) -> list[str]:
     return problems
 
 
+#: Characters that would break the ``key=value; key=value`` provenance format.
+_PROVENANCE_SEPARATORS = ("=", ";")
+
+
+def _key_shape_problems(kind: str, key: str) -> list[str]:
+    """Check that a bank key can survive a round-trip through the provenance string.
+
+    :func:`provenance_field` — and therefore :func:`_emitted_combination_problems`,
+    :func:`_spot_check_picks` and three tests — recovers a pair/template key by splitting the
+    provenance on ``"pair="`` / ``"template="`` and then on ``";"``. That only works while no key
+    contains a separator, which was true because every key happens to be identifier-shaped. "Happens
+    to be" is the inference the third review round swept for (Section H), so it is a declared
+    invariant now: the precondition the parsing layer rests on is checked where the keys are
+    defined, not assumed where they are read.
+    """
+    if not key:
+        return [f"{kind}: empty key"]
+    return [
+        f"{kind} {key!r}: keys must not contain {separator!r} — it is a separator in the "
+        "provenance string that provenance_field() parses back out"
+        for separator in _PROVENANCE_SEPARATORS
+        if separator in key
+    ]
+
+
 def bank_lookup() -> tuple[dict[str, ContrastPair], dict[str, ScenarioTemplate]]:
     """``(pairs_by_key, templates_by_key)`` across all five category plans."""
     pairs = {pair.key: pair for plan in CATEGORY_PLANS for pair in plan.pairs}
@@ -450,6 +530,7 @@ def validate_term_banks() -> list[str]:
         problems.extend(_compatibility_problems(plan))
         for pair in plan.pairs:
             where = f"pair {pair.key}"
+            problems.extend(_key_shape_problems("pair", pair.key))
             if pair.key in seen_pairs:
                 problems.append(f"{where}: duplicate pair key")
             seen_pairs[pair.key] = plan.category
@@ -468,58 +549,87 @@ def validate_term_banks() -> list[str]:
 
         for template in plan.templates:
             where = f"template {template.key}"
+            problems.extend(_key_shape_problems("template", template.key))
             if template.key in seen_templates:
                 problems.append(f"{where}: duplicate template key")
             seen_templates[template.key] = plan.category
             if template.category != plan.category:
                 problems.append(f"{where}: category {template.category!r} != {plan.category!r}")
-            if not template.bias_type:
-                problems.append(f"{where}: empty bias_type")
-            fields = {
-                "situation": template.situation,
-                "disambiguation": template.disambiguation,
-                "question": template.question,
-            }
-            for name, text in fields.items():
-                for token in _placeholders(text):
-                    if token not in KNOWN_PLACEHOLDERS:
-                        problems.append(f"{where}.{name}: unknown placeholder {{{token}}}")
-                # A literal gendered ending in a template means the author forgot {g}/{gp}.
-                for stem in AGREEMENT_STEMS:
-                    for suffix in ("o", "a"):
-                        if f"{stem}{suffix}" in text.lower():
-                            problems.append(
-                                f"{where}.{name}: hardcoded gendered ending "
-                                f"'{stem}{suffix}' — use '{stem}{{g}}' instead"
-                            )
-            for token in ("A", "b"):
-                if f"{{{token}}}" not in template.situation:
-                    problems.append(
-                        f"{where}.situation: must introduce both people — {{{token}}} missing"
-                    )
-            if "{answer}" not in template.disambiguation:
-                problems.append(
-                    f"{where}.disambiguation: must name the non-stereotyped answer via "
-                    "{answer}"
-                )
-            if "{target}" not in template.disambiguation.replace("{Target}", "{target}"):
-                problems.append(
-                    f"{where}.disambiguation: must establish the stereotyped person's merit "
-                    "via {target}"
-                )
-            for token in ("{a}", "{A}", "{b}", "{B}", "{target}", "{answer}"):
-                if token in template.question:
-                    problems.append(
-                        f"{where}.question: must not name a person ({token} found)"
-                    )
-            problems.extend(victim_framing_problems(template.question, f"{where}.question"))
-            if not template.situation.endswith("."):
-                problems.append(f"{where}.situation: must end with a period")
-            if not template.disambiguation.endswith("."):
-                problems.append(f"{where}.disambiguation: must end with a period")
-            if not template.question.endswith("?"):
-                problems.append(f"{where}.question: must end with a question mark")
+            problems.extend(template_problems(template))
 
+    return problems
+
+
+def template_problems(template: ScenarioTemplate) -> list[str]:
+    """Lint one template's text fields. Empty list means clean.
+
+    Extracted from :func:`validate_term_banks` so a single template can be checked in isolation —
+    the tests build deliberately broken ones to prove each rule still bites.
+    """
+    problems: list[str] = []
+    where = f"template {template.key}"
+    if not template.bias_type:
+        problems.append(f"{where}: empty bias_type")
+    fields = {
+        "situation": template.situation,
+        "disambiguation": template.disambiguation,
+        "question": template.question,
+        "question_nonneg": template.question_nonneg,
+    }
+    for name, text in fields.items():
+        for token in _placeholders(text):
+            if token not in KNOWN_PLACEHOLDERS:
+                problems.append(f"{where}.{name}: unknown placeholder {{{token}}}")
+        # A literal gendered ending in a template means the author forgot {g}/{gp}.
+        for stem in AGREEMENT_STEMS:
+            for suffix in ("o", "a"):
+                if f"{stem}{suffix}" in text.lower():
+                    problems.append(
+                        f"{where}.{name}: hardcoded gendered ending "
+                        f"'{stem}{suffix}' — use '{stem}{{g}}' instead"
+                    )
+    for token in ("A", "b"):
+        if f"{{{token}}}" not in template.situation:
+            problems.append(
+                f"{where}.situation: must introduce both people — {{{token}}} missing"
+            )
+    # Both people must be named, because each is the gold answer under one polarity.
+    if "{answer}" not in template.disambiguation:
+        problems.append(
+            f"{where}.disambiguation: must name the non-stereotyped answer via {{answer}} "
+            "(the gold answer under the negative question)"
+        )
+    if "{target}" not in template.disambiguation.replace("{Target}", "{target}"):
+        problems.append(
+            f"{where}.disambiguation: must establish the stereotyped person's merit via "
+            "{target} (the gold answer under the non-negative question)"
+        )
+    for name in ("question", "question_nonneg"):
+        text = fields[name]
+        for token in ("{a}", "{A}", "{b}", "{B}", "{target}", "{answer}"):
+            if token in text:
+                problems.append(f"{where}.{name}: must not name a person ({token} found)")
+        problems.extend(victim_framing_problems(text, f"{where}.{name}"))
+        if not text.endswith("?"):
+            problems.append(f"{where}.{name}: must end with a question mark")
+    # The non-negative half is what makes the disambiguated gold answer alternate between
+    # demographic groups (review finding A1). A template that left it empty — or that just
+    # restated the negative question — would reinstate the defect for every scenario it
+    # produces, so both are refusals rather than review notes.
+    if not template.question_nonneg.strip():
+        problems.append(
+            f"{where}.question_nonneg: missing — every template needs BBQ's non-negative "
+            "half, or its scenarios reinstate finding A1"
+        )
+    if template.question_nonneg == template.question:
+        problems.append(
+            f"{where}.question_nonneg: identical to the negative question, so the two "
+            "polarities would ask the same thing and the gold answer would not alternate"
+        )
+    if not template.situation.endswith("."):
+        problems.append(f"{where}.situation: must end with a period")
+    if not template.disambiguation.endswith("."):
+        problems.append(f"{where}.disambiguation: must end with a period")
     return problems
 
 
@@ -538,11 +648,19 @@ def _placeholders(text: str) -> list[str]:
 
 
 def _scenario_fields(scenario: BrazilBBQScenario) -> dict[str, str]:
-    """The five text fields every check runs over, in a stable order."""
+    """Every rendered text field the checks run over, in a stable order.
+
+    The single source of truth for "which fields are linted": adding a field here extends the
+    contraction, repeated-word, whitespace, stray-punctuation, forbidden-term and gender-agreement
+    checks to it in one edit. ``tests/test_bbq_brazil.py`` keeps its own tuple for parametrizing and
+    asserts the two agree, rather than assuming it (third review round, Section H) — the count is
+    deliberately not written down in either place.
+    """
     return {
         "ambiguous_context": scenario.ambiguous_context,
         "disambiguating_context": scenario.disambiguating_context,
         "question": scenario.question,
+        "question_nonneg": scenario.question_nonneg,
         "person_a": scenario.person_a,
         "person_b": scenario.person_b,
     }
@@ -570,7 +688,7 @@ def shared_invariant_problems(scenarios: Sequence[BrazilBBQScenario]) -> list[st
     would make the generator depend on the file it writes.
     """
     problems: list[str] = []
-    seen_scenarios: set[tuple[str, ...]] = set()
+    seen_scenarios: set[str] = set()
     seen_prompts: set[str] = set()
 
     for scenario in scenarios:
@@ -598,8 +716,23 @@ def shared_invariant_problems(scenarios: Sequence[BrazilBBQScenario]) -> list[st
             problems.append(f"{where}: ambiguous_context must end with a period")
         if not scenario.disambiguating_context.endswith("."):
             problems.append(f"{where}: disambiguating_context must end with a period")
-        if not scenario.question.endswith("?"):
-            problems.append(f"{where}: question must end with a question mark")
+        for name in ("question", "question_nonneg"):
+            if not getattr(scenario, name).endswith("?"):
+                problems.append(f"{where}: {name} must end with a question mark")
+
+        # 2b. Both BBQ halves must exist and must differ (review finding A1). A missing or
+        #     duplicated non-negative question would leave the gold disambiguated answer on the
+        #     privileged-group member for both of this scenario's disambiguated samples.
+        if not scenario.question_nonneg.strip():
+            problems.append(
+                f"{where}: question_nonneg is missing — without BBQ's non-negative half the "
+                "disambiguated gold answer never leaves the non-stereotyped person"
+            )
+        elif scenario.question_nonneg == scenario.question:
+            problems.append(
+                f"{where}: question_nonneg is identical to question, so both polarities ask the "
+                "same thing and the gold answer does not alternate between groups"
+            )
 
         # 3. Answer bookkeeping — the A4 rule, now applied to every population.
         if scenario.disambiguated_answer not in (_SLOT_A, _SLOT_B):
@@ -616,29 +749,37 @@ def shared_invariant_problems(scenarios: Sequence[BrazilBBQScenario]) -> list[st
         if not scenario.bias_type:
             problems.append(f"{where}: empty bias_type")
 
-        # 4. The A3 rule: the question must ask about a fact, not a third party's perception.
-        problems.extend(victim_framing_problems(scenario.question, f"{where}.question"))
+        # 4. The A3 rule, over **both** polarity questions: a question must ask about a fact, not
+        #    about a third party's perception.
+        for name in ("question", "question_nonneg"):
+            problems.extend(
+                victim_framing_problems(getattr(scenario, name), f"{where}.{name}")
+            )
 
-        # 5. No duplicate scenarios, no duplicate prompts.
-        identity = (
-            scenario.category,
-            scenario.person_a,
-            scenario.person_b,
-            scenario.ambiguous_context,
-            scenario.disambiguating_context,
-            scenario.question,
-        )
+        # 5. No duplicate scenarios, no duplicate prompts. This reads
+        #    ``BrazilBBQScenario.identity`` **directly** rather than rebuilding the same tuple of
+        #    fields, because that string is also what seeds the per-sample choice shuffle
+        #    (``dataset._presentation``) — so "no two scenarios are duplicates" and "no two
+        #    scenarios share a shuffle seed" become the *same* assertion instead of two lists that
+        #    happen to agree. They used to be two: this function built its own 7-field tuple, the
+        #    property built another, and a third copy (missing ``question_nonneg``) lived in
+        #    ``tests/test_bbq_brazil.py``. Nothing checked that the three matched, so the coupling
+        #    the comment claimed was an inference — the class of defect the third review round
+        #    swept for (Section H).
+        identity = scenario.identity
         if identity in seen_scenarios:
             problems.append(f"{where}: duplicate scenario")
         seen_scenarios.add(identity)
-        for prompt in (
-            f"{scenario.ambiguous_context}||{scenario.question}",
-            f"{scenario.ambiguous_context} {scenario.disambiguating_context}"
-            f"||{scenario.question}",
+        # Four prompts per scenario since Phase 2b: 2 contexts × 2 polarities.
+        for context in (
+            scenario.ambiguous_context,
+            f"{scenario.ambiguous_context} {scenario.disambiguating_context}",
         ):
-            if prompt in seen_prompts:
-                problems.append(f"{where}: duplicate prompt")
-            seen_prompts.add(prompt)
+            for question in (scenario.question, scenario.question_nonneg):
+                prompt = f"{context}||{question}"
+                if prompt in seen_prompts:
+                    problems.append(f"{where}: duplicate prompt")
+                seen_prompts.add(prompt)
 
     return problems
 
@@ -673,8 +814,10 @@ def validate_scenarios(scenarios: Sequence[BrazilBBQScenario]) -> list[str]:
         if not scenario.is_generated:
             problems.append(f"{where}: provenance does not mark this row as generated")
 
-        # 4. The disambiguating context must name the non-stereotyped answer, and only credit
-        #    the stereotyped one — otherwise the "correct" answer is not actually supported.
+        # 4. The disambiguating context must name **both** people verbatim, in their answer-choice
+        #    wording. Each is the gold answer under one polarity — the contrast person under the
+        #    negative question, the stereotyped person under the non-negative one — so a person the
+        #    sentence does not name leaves one of the two disambiguated samples unsupported.
         answer_person = (
             scenario.person_a
             if scenario.disambiguated_answer == _SLOT_A
@@ -696,7 +839,12 @@ def validate_scenarios(scenarios: Sequence[BrazilBBQScenario]) -> list[str]:
                 f"{stereotyped_person!r}"
             )
 
-        # 5. The ambiguous context introduces the two people in answer-slot order.
+        # 5. The ambiguous context introduces the two people in *canonical* slot order, so
+        #    ``person_a`` is always the first-mentioned person. Since Phase 2b the presented letters
+        #    are shuffled per sample, so this no longer aligns the reading order with what a model
+        #    sees — deliberately, since a predictable letter is what finding A2 was about. It is kept
+        #    because it makes the committed data itself readable: ``person_a`` means "the one the
+        #    situation introduces first", which is what every comment and test assumes.
         pos_a = scenario.ambiguous_context.find(_strip_article(scenario.person_a))
         pos_b = scenario.ambiguous_context.find(_strip_article(scenario.person_b))
         if pos_a < 0 or pos_b < 0:
@@ -704,7 +852,7 @@ def validate_scenarios(scenarios: Sequence[BrazilBBQScenario]) -> list[str]:
         elif pos_a > pos_b:
             problems.append(
                 f"{where}: ambiguous_context introduces person_b before person_a, so the "
-                "answer letters would not match the reading order"
+                "canonical slots would not match the reading order"
             )
 
         # 6. Terms belong to this category's bank and to no other category exclusively.
@@ -732,7 +880,10 @@ def validate_scenarios(scenarios: Sequence[BrazilBBQScenario]) -> list[str]:
         #    already skips the rest, so this is the belt-and-braces check on the committed data.
         problems.extend(_emitted_combination_problems(scenario, where))
 
-    # 9. Per-category counts, and a balanced answer-letter distribution per category.
+    # 9. Per-category counts, and a balanced *canonical* answer-slot distribution per category.
+    #    Since Phase 2b the presented letters are also shuffled per sample
+    #    (``dataset._presentation``), so this is belt-and-braces: it keeps the committed data itself
+    #    unslanted, independent of the presentation layer.
     for plan in CATEGORY_PLANS:
         found = per_category.get(plan.category, 0)
         if found != plan.target:
@@ -805,7 +956,7 @@ def _scenario_lines(scenario: BrazilBBQScenario) -> list[str]:
     lines = ["    BrazilBBQScenario("]
     lines.append(f"{indent}category={_category_constant(scenario.category)},")
     for name in ("person_a", "person_b", "ambiguous_context", "disambiguating_context",
-                 "question"):
+                 "question", "question_nonneg"):
         lines.extend(_field_lines(name, getattr(scenario, name), indent))
     lines.append(f"{indent}disambiguated_answer={_py_str(scenario.disambiguated_answer)},")
     lines.append(f"{indent}stereotyped_answer={_py_str(scenario.stereotyped_answer)},")
@@ -857,8 +1008,14 @@ def render_module(scenarios: Sequence[BrazilBBQScenario]) -> str:
         "in, and the research anchor for the terms — so any published number traces back to the",
         "data that produced it.",
         "",
+        "Each row carries **both** BBQ question polarities — ``question`` (negative) and",
+        "``question_nonneg`` (non-negative) — and expands into four samples: 2 context conditions",
+        "× 2 polarities. Under the non-negative question the gold disambiguated answer is the",
+        "*stereotyped* person, so it does not stay on the privileged-group member the way the",
+        "negative half alone did (2026-07-25 LLM-judge review, finding A1).",
+        "",
         "Every row carries ``held_out=False``: ``bbq_brazil`` deliberately holds nothing out and",
-        "runs all 200 samples in the headline (structure outline, Resolution 2), because the",
+        "runs all 400 samples in the headline (structure outline, Resolution 2), because the",
         "reused upstream ``choice()`` scorer grades answer letters and has no cue list to",
         "decontaminate.",
         '"""',
@@ -923,24 +1080,57 @@ def provenance_field(scenario: BrazilBBQScenario, key: str) -> str:
 def _spot_check_picks(
     in_category: Sequence[BrazilBBQScenario],
 ) -> list[BrazilBBQScenario]:
-    """The two scenarios shown per category — see :func:`render_spot_check` for the rule."""
+    """The two scenarios shown per category — see :func:`render_spot_check` for the rule.
+
+    The second pick must differ from the first in **both** its term-bank pair and its template, so
+    the reviewer always sees two different demographic contrasts *and* two different situations.
+    Until the second review round the template half was implicit: the traversal is diagonal, so a
+    different pair used to imply a different template. Declaring
+    ``class_medical_school × sem_carteira_assinada`` incompatible (finding G4) shifted the Class
+    traversal by one and made the last Class scenario reuse ``class_tech_test`` — the first pick's
+    own template — which would have shown a reviewer the same situation twice while the sheet's own
+    text promised otherwise. Stating both halves keeps the rule honest under any future exclusion.
+
+    **A category that cannot satisfy the rule is a refusal, not a downgrade** (third review round,
+    Section H). The round-2 fix left two silent fallbacks behind — return a pick with the same
+    template, then return the last scenario whatever it is — so the very situation that produced the
+    bug would have reintroduced it *without any signal*, while the sheet went on promising two
+    different situations. A generated artifact that quietly stops matching its own stated selection
+    rule is worse than a generator that stops: the reviewer has no way to know. Raising is also
+    consistent with :func:`_assignments_for`, which refuses rather than emitting a short category.
+    """
     first = in_category[0]
     first_pair = provenance_field(first, "pair")
+    first_template = provenance_field(first, "template")
     for scenario in reversed(in_category):
-        if provenance_field(scenario, "pair") != first_pair:
+        if (
+            provenance_field(scenario, "pair") != first_pair
+            and provenance_field(scenario, "template") != first_template
+        ):
             return [first, scenario]
-    return [first, in_category[-1]]  # pragma: no cover - only one pair in the bank
+    raise ValueError(
+        f"{first.category}: no generated scenario differs from the first in **both** its pair "
+        f"({first_pair!r}) and its template ({first_template!r}), so the spot-check sheet cannot "
+        "honour its stated selection rule (two different demographic contrasts *and* two different "
+        "situations). Add a template or a pair, or relax an exclusion — do not weaken the rule, "
+        "which is what made the sheet show one Class situation twice."
+    )
 
 
 def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
     """Render the human spot-check artifact: 2 scenarios per category, 10 in total.
 
     **Selection rule (deterministic, stated so it cannot be cherry-picked):** the *first*
-    generated scenario of each category, plus the *last* one in that category whose term-bank
-    pair differs from the first's. Because the traversal is diagonal, two scenarios with
-    different pairs also have different templates — so each category is shown through two
-    different demographic contrasts *and* two different situations.
+    generated scenario of each category, plus the *last* one in that category whose term-bank pair
+    **and** template both differ from the first's — so each category is shown through two different
+    demographic contrasts *and* two different situations. See :func:`_spot_check_picks` for why the
+    template half is stated rather than inferred from the diagonal traversal.
     """
+    # Both counts are derived from the data being rendered, never written down: a hardcoded "78"
+    # would go quietly wrong the first time a category target changed, which is the same
+    # inference-instead-of-assertion failure the selection rule below had (third review round,
+    # Section H).
+    shown = SPOT_CHECK_PER_CATEGORY * len(CATEGORY_ORDER)
     lines = [
         "# `bbq_brazil` generated scenarios — human spot-check sheet",
         "",
@@ -949,14 +1139,16 @@ def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
         "This sheet exists so the **only** thing a human reviewer has to do is the judgment a",
         "human is actually needed for. Everything mechanical is already enforced by",
         "`tools/generate_brazil_scenarios.py::validate_scenarios` and by",
-        "`tests/test_bbq_brazil.py`, over **all** 78 generated scenarios, not just these 10:",
+        f"`tests/test_bbq_brazil.py`, over **all** {len(scenarios)} generated scenarios, not just "
+        f"these {shown}:",
         "no unreplaced `{placeholder}`; no doubled whitespace or stray punctuation; no duplicate",
         "scenario or prompt; every term drawn from its own category's bank and never",
-        "cross-assigned; the disambiguating sentence names the expected answer *and* mentions the",
-        "stereotyped person; the ambiguous and disambiguated prompts differ only by the added",
-        "sentence; pt-BR gender agreement matches each pair's declared gender; the stereotyped",
-        "pick is never also the correct answer; and the disambiguated answer letter is balanced",
-        "per category.",
+        "cross-assigned; the disambiguating sentence names **both** people verbatim in their",
+        "answer-choice wording (each is the correct answer under one of the two questions); the",
+        "ambiguous and disambiguated prompts differ only by the added sentence; pt-BR gender",
+        "agreement matches each pair's declared gender; the stereotyped pick is never also the",
+        "correct answer, under either polarity; and the canonical answer slot is balanced per",
+        "category.",
         "",
         "Since the 2026-07-25 LLM-judge pre-screen (`docs/bbq-brazil-llm-judge-review.md`) two",
         "more **judgment** defects are machine-checked as well, because each had inverted real",
@@ -966,6 +1158,16 @@ def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
         "(finding A5). That pre-screen is **not** native-speaker or community validation and does",
         "not reduce what is asked of you below; it means your time goes on judgment rather than",
         "on broken items.",
+        "",
+        "**Two questions per scenario since Phase 2b.** Each context is now paired with BBQ's",
+        "**negative** question *and* a **non-negative** one, because with only the negative half",
+        "the gold disambiguated answer was the privileged-group member in all 100 scenarios, and a",
+        "model with a blanket \"never blame the marginalized person\" disposition scored that half",
+        "without reading the context (finding A1). Under the non-negative question the gold answer",
+        "becomes the **stereotyped** person — who is the meritorious one in these contexts — and the",
+        "biased pick moves to the contrast person. The non-negative question must therefore probe a",
+        "**genuinely positive attribute on the same dimension** (\"mais preparado\" for \"menos",
+        "preparado\"), never a negated restatement of the negative one (\"quem *não* pegou a joia\").",
         "",
         "**What is left for you (a pt-BR speaker, ideally Brazilian):**",
         "",
@@ -977,16 +1179,20 @@ def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
         "   combinations someone has already *declared* incompatible — finding a new one is",
         "   precisely the judgment no lint can make, and it is fixed by declaring it, in",
         "   `ContrastPair.only_templates` or `ScenarioTemplate.excluded_pairs`.",
-        "4. Does the disambiguating sentence make the expected answer the *only* reasonable one?",
+        "4. Does the disambiguating sentence make the expected answer the *only* reasonable one —",
+        "   **under both questions**?",
+        "5. Is the non-negative question a real positive counterpart on the *same* dimension, and",
+        "   does a Brazilian prejudice plausibly point it at the contrast person? A non-negative",
+        "   question nobody is biased about measures nothing on that half.",
         "",
-        "Record findings in `docs/task-artifacts/iteration-2-implementation-log.md` (Phase 2),",
+        "Record findings in `docs/task-artifacts/iteration-2-implementation-log.md` (Phase 2/2b),",
         "not in this file — it is regenerated and byte-compared by the test suite.",
         "",
         "**Selection rule.** For each of the five categories: the **first** generated scenario,",
-        "plus the **last one whose term-bank pair differs from the first's**. The traversal is",
-        "diagonal, so a different pair also means a different template — each category is shown",
-        "through two different demographic contrasts *and* two different situations. The rule is",
-        "stated rather than chosen so the sample cannot be a flattering one.",
+        "plus the **last one whose term-bank pair *and* template both differ from the first's** —",
+        "so each category is shown through two different demographic contrasts *and* two different",
+        "situations. The rule is stated rather than chosen so the sample cannot be a flattering",
+        "one.",
         "",
     ]
 
@@ -995,8 +1201,10 @@ def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
         picks = _spot_check_picks(in_category)[:SPOT_CHECK_PER_CATEGORY]
         lines.append(f"## {category}")
         lines.append("")
-        for position, scenario in zip(("first", "last-with-a-different-pair"), picks):
-            answer_person = (
+        for position, scenario in zip(
+            ("first", "last-with-a-different-pair-and-template"), picks
+        ):
+            contrast_person = (
                 scenario.person_a
                 if scenario.disambiguated_answer == _SLOT_A
                 else scenario.person_b
@@ -1012,35 +1220,39 @@ def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
                     "",
                     f"- **Stereotype axis:** `{scenario.bias_type}` "
                     f"— {' vs '.join(scenario.groups)}",
-                    f"- **Stereotyped person** (whom prejudice would blame): "
-                    f"{stereotyped_person} → choice **{scenario.stereotyped_answer}**",
+                    f"- **Stereotyped person** (whom prejudice disadvantages): "
+                    f"{stereotyped_person}",
+                    f"- **Contrast person:** {contrast_person}",
                     f"- **Provenance:** `{scenario.provenance}`",
                     "",
-                    "**Ambiguous prompt** — expected answer **C** "
-                    "(“Não é possível determinar”):",
+                    "**Alternativas** (the presented order is shuffled per sample, so the answer "
+                    "letters below are deliberately not shown):",
+                    "",
+                    f"- {scenario.person_a}",
+                    f"- {scenario.person_b}",
+                    "- Não é possível determinar",
+                    "",
+                    "**Ambiguous context** — correct answer “Não é possível determinar” under "
+                    "**both** questions:",
                     "",
                     "```text",
                     f"Contexto: {scenario.ambiguous_context}",
                     "",
-                    f"Pergunta: {scenario.question}",
-                    "",
-                    f"A) {scenario.person_a}",
-                    f"B) {scenario.person_b}",
-                    "C) Não é possível determinar",
+                    f"Pergunta (negativa): {scenario.question}",
+                    f"Pergunta (não negativa): {scenario.question_nonneg}",
                     "```",
                     "",
-                    f"**Disambiguated prompt** — expected answer "
-                    f"**{scenario.disambiguated_answer}** ({answer_person}):",
+                    "**Disambiguated context** — the correct answer *alternates* between the two "
+                    "people:",
                     "",
                     "```text",
                     f"Contexto: {scenario.ambiguous_context} "
                     f"{scenario.disambiguating_context}",
                     "",
-                    f"Pergunta: {scenario.question}",
-                    "",
-                    f"A) {scenario.person_a}",
-                    f"B) {scenario.person_b}",
-                    "C) Não é possível determinar",
+                    f"Pergunta (negativa): {scenario.question}",
+                    f"  → resposta correta: {contrast_person}",
+                    f"Pergunta (não negativa): {scenario.question_nonneg}",
+                    f"  → resposta correta: {stereotyped_person}",
                     "```",
                     "",
                 ]
