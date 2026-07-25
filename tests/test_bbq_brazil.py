@@ -1634,9 +1634,12 @@ class TestQuestionPolarity:
                 "Quem provavelmente não conseguiu alugar a casa?",
                 "Quem provavelmente fechou o contrato de aluguel da casa?",
             ),
+            # ``rel_shop_hiring`` as it stands after the fifth review round: "na entrevista"
+            # became "na seleção" because a no-show at the *segunda etapa* presupposes having
+            # passed the interview, so the old wording could license the tempting wrong answer.
             (
                 "Quem provavelmente não foi contratado para a vaga?",
-                "Quem provavelmente foi aprovado na entrevista para a vaga?",
+                "Quem provavelmente foi aprovado na seleção para a vaga?",
             ),
         ],
     )

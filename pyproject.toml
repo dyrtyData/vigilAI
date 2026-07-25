@@ -41,7 +41,12 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0.0", "pytest-cov>=4.1.0", "types-PyYAML"]
+# `mypy` is here because `[tool.mypy]` below has been configured since Phase 1 while the tool was
+# never a dependency, so every phase type-checked with `uv run --with mypy mypy …` — a resolve of
+# whatever mypy was newest that day, and therefore a check that could change verdict without any
+# change to this repo. Pinned to the group, it is locked in `uv.lock` like everything else and
+# `uv run mypy src/vigilai/` is reproducible.
+dev = ["pytest>=8.0.0", "pytest-cov>=4.1.0", "types-PyYAML", "mypy>=1.11"]
 
 [project.entry-points.inspect_ai]
 vigilai = "vigilai._registry"

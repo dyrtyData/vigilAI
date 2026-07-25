@@ -214,16 +214,47 @@ positive attribute nobody is biased about measures nothing, and one the counter-
 measures backwards. **46 passed, 6 were flagged, all six fixed** (Section G of the review). Two of
 the six were the serious kind: one asked about an attribute no Brazilian prejudice attaches to, and
 one probed *warmth* — a trait the counter-stereotype owns, so a biased model recorded as unbiased.
-Both were failing in the reassuring direction, which is the direction that matters.
+Both were failing in the reassuring direction, which is the direction that matters. Two later
+passes (Sections H and I) closed the defects that round reported but left open, the last of them by
+**repointing a whole template**: the *warmth* item could not be repaired by rewording, because
+manners-at-a-counter is the wrong axis for nordestino/paulistano prejudice in the first place, so
+its situation now probes institutional literacy. Research §9.2 records that prejudice as "internal
+orientalism" and the "racialization of region" (Serrão, 2022); reading institutional literacy as
+that frame's everyday form is **the authors' inference** from it, endorsed by a later judge and by
+no cited source — a distinction the review document draws explicitly (Section J1-c) because the
+corpus's credibility rests on traceability.
 
-**What is still outstanding is validation, not item design.** The categories and stereotypes have
-had no native-annotator or community validation: **that remains pending**, the LLM pre-screen does
-not substitute for it, and no claim of completed community validation may be made anywhere on the
-strength of this repository. Two LLM rounds have now been over the 52 non-negative questions, the
-second one specifically on whether each is pointed at a prejudice a Brazilian would recognise — but
-that is still an LLM reading Portuguese, and whether these questions read as something a Brazilian
-would *say*, about a prejudice a Brazilian would *recognise*, is the one item-level judgment only a
-native speaker can rule on.
+**A fifth and final round** read the audit described below, plus that repointed axis. **The axis
+was sustained**; four narrow flags were fixed — a wrong product noun (*fatura* for a loan repaid in
+*parcelas*), a scenario whose anti-baiano argument depended on a São Paulo frame the text never
+named, a non-negative question that could license the tempting wrong answer, and one pre-Phase-2b
+string that was still carrying a wording an earlier round had condemned elsewhere (Section J).
+
+**What is still outstanding is validation, not item design — and a list of what has never been
+read.** The categories and stereotypes have had no native-annotator or community validation:
+**that remains pending**, the LLM pre-screen does not substitute for it, and no claim of completed
+community validation may be made anywhere on the strength of this repository. An LLM reading
+Portuguese is not a Brazilian reading Portuguese, and whether these questions read as something a
+Brazilian would *say*, about a prejudice a Brazilian would *recognise*, is the one item-level
+judgment only a native speaker can rule on.
+
+Each review round also wrote its replacement wordings **after** its judges finished, so those
+replacements inherited none of the review that produced them.
+[`docs/bbq-brazil-unreviewed-wordings.md`](docs/bbq-brazil-unreviewed-wordings.md) enumerated every
+one of them — **14 question fields, 28 rendered strings, 22 of the 100 scenarios, 56 of the 400
+samples** — with the wording each replaced, both polarities, the sentence that has to license them,
+and who is gold against who is the tempting wrong answer under each polarity. It was derived from
+the mock-eval logs each round left behind rather than from the review write-up, because the
+write-up records intentions and at least one shipped wording deliberately departs from one. **That
+audit is now RESOLVED**: the fifth round read all 14 entries, and the file is kept as the
+derivation record behind Section J rather than as pending work.
+
+The structural condition it describes does not fully go away, and the review says so plainly:
+round 5's own four wordings were likewise written after its judges finished. No sixth round is
+planned — one would only mint its own unreviewed replacements — so that is recorded as a
+disclosure, alongside the other four deliberately-unfixed items in **Section J4**: Phase 10
+native-annotator validation, a pair rotation in one Religion template, an asymmetry in the negation
+guard, and one double-weighted cell in the Class aggregate.
 
 ## EU ↔ Brazil mapping
 
