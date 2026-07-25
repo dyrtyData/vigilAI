@@ -80,13 +80,77 @@ exclude = [
 default.check-file = true
 default.check-filename = true
 default.extend-ignore-identifiers-re = []
-default.extend-ignore-re = ["(?Rm)^.*(#|//)\\s*spellchecker:disable-line$"]
+default.extend-ignore-re = [
+    "(?Rm)^.*(#|//)\\s*spellchecker:disable-line$",
+    # `typos` splits on the hyphen and reads the English prefix `mis-` as a misspelling of
+    # `miss`/`mist`. "Mis-keyed" (an item whose answer key points at the wrong person) is the
+    # LLM-judge review's own term of art, used in `docs/bbq-brazil-llm-judge-review.md` and in the
+    # `bbq_brazil` scenario comments that cite it. Scoped to this one literal rather than adding
+    # `mis` to the dictionary, which would hide the real typo repo-wide.
+    "(?i)\\bmis-keyed\\b",
+]
 files.extend-exclude = [
     "*.ipynb",  # Notebook cells are asigned a hash.
     "src/vigilai/tasks/self_check_consistency/topics.py",
     "src/vigilai/tasks/self_check_consistency/compact_ie/",
     "src/vigilai/tasks/mmlu_pro_robustness/correct_to_misspelling.json",
 ]
+
+# Portuguese words that `typos` reads as English misspellings.
+#
+# vigilAI's Brazil benchmarks are written in pt-BR: the `bbq_brazil` scenarios, the
+# `explanation_quality` / `contestation_review` prompts, and the deterministic scorers'
+# Portuguese detection cues. Iteration 2 grew `bbq_brazil` from 22 to 100 scenarios, which
+# multiplied these false positives (e.g. `classe`, from the ABEP classe A-E class markers).
+#
+# Each word below is mapped **to itself**, which is `typos`' documented way of saying "this
+# spelling is correct". That is deliberately narrower than the alternatives:
+#   * excluding the Brazil task files would stop checking thousands of lines of English
+#     docstrings and comments that live in the same modules;
+#   * an `extend-ignore-identifiers-re` pattern broad enough to cover pt-BR prose would also
+#     hide real English typos;
+#   * disabling `typos` for the repo is not on the table.
+# A genuine English typo anywhere in the repo is still reported.
+#
+# Note on `analise`: the correct pt-BR spelling is "análise". The unaccented form is
+# intentional in the scorers, whose `_normalize` folds accents before matching, so the cue
+# lists store accent-folded strings.
+#
+# NOT silenced, and therefore still failing `uvx typos`: `explicitely` / `explicite` /
+# `explcitely` / `fo` in `src/vigilai/tasks/cab/*.json`. Those are real English typos in data
+# vendored from upstream COMPL-AI; they should be fixed in place (or the upstream files excluded
+# as vendored data) when Phase 10 makes `uvx typos` clean, not hidden behind a dictionary entry.
+[tool.typos.default.extend-words]
+analise = "analise"
+candidata = "candidata"
+classe = "classe"
+cliente = "cliente"
+clientes = "clientes"
+comercial = "comercial"
+curso = "curso"
+dependente = "dependente"
+disciplinas = "disciplinas"
+excede = "excede"
+formar = "formar"
+fundamentais = "fundamentais"
+instituto = "instituto"
+itens = "itens"
+jornal = "jornal"
+limite = "limite"
+momento = "momento"
+potencial = "potencial"
+presentes = "presentes"
+programa = "programa"
+registre = "registre"
+responde = "responde"
+ser = "ser"
+suspenso = "suspenso"
+tema = "tema"
+vai = "vai"
+# Not Portuguese, but correct as written in the committed research notes:
+# FPR = False Positive Rate; BA = the IBGE code for the state of Bahia.
+BA = "BA"
+FPR = "FPR"
 
 [tool.uv.sources]
 inspect-evals = { git = "https://github.com/UKGovernmentBEIS/inspect_evals" }

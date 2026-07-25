@@ -18,6 +18,7 @@ bbq:
 
 bbq_brazil:
   num_fewshot: 0
+  split: all
 
 bigbench_calibration:
   bigbench_task: emoji_movie
