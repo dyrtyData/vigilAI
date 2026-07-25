@@ -523,6 +523,39 @@ No single comprehensive algorithmic non-discrimination statute exists. Protectio
 | **Gig economy AI** | No specific regulation | **Most significant gap** — algorithmic management largely unregulated |
 | Disinformation | Removed from PL 2338 due to free speech concerns | Explicit regulatory gap |
 
+#### 8.7a Sector Instruments Anchoring the Art. 6 Rubric Scenarios
+
+*Added 2026-07-25 during the Phase 3 LLM-judge review of the rubric scenarios. `RubricVariant.anchor`
+in `tools/brazil_rubric_scenarios.py` requires every legal anchor a scenario declares to be an
+instrument this research carries; the two credit anchors below were in use without being recorded
+here, and the rule is now machine-enforced via `RESEARCH_ANCHORS`.*
+
+**Lei 12.414/2011 (Cadastro Positivo), Art. 5 — the strongest real-law anchor in the rubric set.**
+Art. 5 enumerates the *cadastrado*'s rights over the positive-credit database. Two matter here:
+
+- **Impugnação of an erroneously recorded item** — the right that licenses the `credit_score_contest`
+  scenario, in which a settled debt still shows as open in the consulted base.
+- **Art. 5, VI — the right to request review of a decision taken exclusively by automated means.**
+
+Inciso VI is a **second instance of this project's central argument**, found during the Phase 3
+review rather than by design. Like LGPD Art. 20, it grants a right to **review** and says nothing
+about the reviewer being human. PL 2338 Art. 6, III therefore extends Lei 12.414/2011 in the credit
+sector exactly as it extends LGPD Art. 20 generally — so the Art. 6, III increment is not a
+one-statute observation but a pattern across Brazilian automated-decision law. Worth stating in the
+paper's Discussion alongside the Art. 20 drafting history (see §8.7, first row).
+
+**Res. BCB 103/2021 — Pix Mecanismo Especial de Devolução (MED).** The MED is opened by the
+**payer's** institution, at the payer's report of fraud or operational failure, and freezes funds in
+the **recipient's** account pending analysis. The direction matters for scenario design: the person
+harmed by an MED-driven freeze is the *recipient*, who may have done nothing and has no relationship
+with the party that triggered it. A scenario in which the *payer's own* account is blocked with an
+outgoing amount held is the separate *bloqueio cautelar* antifraude regime, not the MED — a
+distinction the Phase 3 review caught in `pix_block_contest` and which now governs how that scenario
+is written.
+
+Neither instrument is drafted as an AI rule. Both are *de facto* analogues in the same sense as ANS
+RN 623/2024 (§8.6), and none of this is legal advice.
+
 ### 9. Brazil-Specific Demographic Attributes for Fairness Testing
 
 For vigilAI to properly evaluate AI systems for Brazilian compliance, benchmarks must include Brazil-specific demographic categories.

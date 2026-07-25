@@ -49,6 +49,7 @@ benchmark (the hand-authored pilot included, and the test suite runs it over the
 from __future__ import annotations
 
 import hashlib
+import re
 import sys
 import types
 from collections.abc import Sequence
@@ -87,10 +88,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 # ``vigilai.tasks.bbq_brazil.dataset.ALL_SCENARIOS`` holds only the 22 hand-authored pilot rows.
 # Nothing here imports ``dataset``, and nothing here may start to — read the committed data through
 # the test suite instead.
-if __name__ == "__main__" and "vigilai.tasks.bbq_brazil.generated" not in sys.modules:
-    _stub = types.ModuleType("vigilai.tasks.bbq_brazil.generated")
-    _stub.GENERATED_SCENARIOS = []  # type: ignore[attr-defined]
-    sys.modules["vigilai.tasks.bbq_brazil.generated"] = _stub
+# **Phase 3 adds two more.** The rubric tasks got the same generated-module pattern, and the same
+# chain applies twice over: ``vigilai.tasks.explanation_quality.scenario`` runs that package's
+# ``__init__ → explanation_quality → dataset → generated``. Without a stub the generator cannot run
+# at all before the file it writes exists — which is every fresh checkout, not just a stale-file
+# edge case.
+_GENERATED_MODULES = (
+    "vigilai.tasks.bbq_brazil.generated",
+    "vigilai.tasks.explanation_quality.generated",
+    "vigilai.tasks.contestation_review.generated",
+)
+if __name__ == "__main__":
+    for _module_name in _GENERATED_MODULES:
+        if _module_name not in sys.modules:
+            _stub = types.ModuleType(_module_name)
+            _stub.GENERATED_SCENARIOS = []  # type: ignore[attr-defined]
+            sys.modules[_module_name] = _stub
+
+from brazil_rubric_scenarios import CONDITIONAL_VOCABULARY_RULES  # noqa: E402
+from brazil_rubric_scenarios import CONTENT_STOPWORDS  # noqa: E402
+from brazil_rubric_scenarios import ENGLISH_SUFFIXES  # noqa: E402
+from brazil_rubric_scenarios import ENGLISH_WORDS  # noqa: E402
+from brazil_rubric_scenarios import GLOBAL_FORBIDDEN  # noqa: E402
+from brazil_rubric_scenarios import LEAK_TERMS  # noqa: E402
+from brazil_rubric_scenarios import MAX_INTRA_DOMAIN_OVERLAP  # noqa: E402
+from brazil_rubric_scenarios import MIN_REFERENCE_GROUNDING_TOKENS  # noqa: E402
+from brazil_rubric_scenarios import PT_BR_LOANWORDS  # noqa: E402
+from brazil_rubric_scenarios import RESEARCH_ANCHORS  # noqa: E402
+from brazil_rubric_scenarios import RUBRIC_TASK_PLANS  # noqa: E402
+from brazil_rubric_scenarios import RubricTaskPlan  # noqa: E402
+from brazil_rubric_scenarios import RubricVariant  # noqa: E402
 
 from brazil_term_banks import AGREEMENT_STEMS  # noqa: E402
 from brazil_term_banks import CATEGORY_PLANS  # noqa: E402
@@ -113,12 +140,60 @@ from brazil_term_banks import VICTIM_FRAMING_PATTERNS  # noqa: E402
 from vigilai.tasks.bbq_brazil.scenario import BrazilBBQScenario  # noqa: E402
 from vigilai.tasks.bbq_brazil.scenario import CATEGORY_ORDER  # noqa: E402
 from vigilai.tasks.bbq_brazil.scenario import GENERATED_PROVENANCE_PREFIX  # noqa: E402
+from vigilai.tasks.contestation_review.rubric import (  # noqa: E402
+    detect_elements as detect_contestation_elements,
+)
+from vigilai.tasks.contestation_review.rubric import score_contestation  # noqa: E402
+from vigilai.tasks.contestation_review.scenario import ContestationScenario  # noqa: E402
+from vigilai.tasks.explanation_quality.rubric import (  # noqa: E402
+    detect_elements as detect_explanation_elements,
+)
+from vigilai.tasks.explanation_quality.rubric import score_explanation  # noqa: E402
+from vigilai.tasks.explanation_quality.scenario import ExplanationScenario  # noqa: E402
+from vigilai.tasks.rubric_scenario import FRAME_LICENCE  # noqa: E402
+from vigilai.tasks.rubric_scenario import MIN_LICENCE_SPAN  # noqa: E402
+from vigilai.tasks.rubric_scenario import RubricScenario  # noqa: E402
+from vigilai.tasks.rubric_scenario import frame_licensed_elements  # noqa: E402
 
 
 GENERATOR_COMMAND = "uv run python tools/generate_brazil_scenarios.py"
 
 BBQ_GENERATED_PATH = _REPO_ROOT / "src" / "vigilai" / "tasks" / "bbq_brazil" / "generated.py"
 BBQ_SPOT_CHECK_PATH = _REPO_ROOT / "docs" / "bbq-brazil-generated-spot-check.md"
+RUBRIC_SPOT_CHECK_PATH = _REPO_ROOT / "docs" / "rubric-scenarios-generated-spot-check.md"
+
+
+def rubric_generated_path(plan: RubricTaskPlan) -> Path:
+    """Where a rubric task's generated literals are written."""
+    return _REPO_ROOT.joinpath(*plan.module_path)
+
+
+#: The deterministic rubric scorer for each task, used to *prove* every scenario can elicit all
+#: six of its elements: the generator refuses to write a scenario whose ``reference_answer`` does
+#: not score exactly 1.0. Importing these is safe under the bootstrap stub above.
+RUBRIC_SCORERS = {
+    "explanation_quality": score_explanation,
+    "contestation_review": score_contestation,
+}
+
+#: The real per-element detector for each task. **New in the Phase 3 cue fix.** Until the cue
+#: lists were word-bounded this could not be used as a leakage guard at all — ``"form"`` matched
+#: *forma* / *informação* / *conforme* / *plataforma*, so every pilot scenario "leaked" a
+#: contestation channel and so would almost any Portuguese sentence. With that class of defect
+#: closed, running the scorer's own detector over scenario text is exactly the right check, and it
+#: now runs **alongside** the hand-written :data:`LEAK_TERMS` list rather than instead of it: the
+#: detector catches anything the *scorer* would credit, the term list catches phrasings that leak
+#: an element semantically without being a cue (*canal de atendimento*, *daremos retorno*).
+RUBRIC_DETECTORS = {
+    "explanation_quality": detect_explanation_elements,
+    "contestation_review": detect_contestation_elements,
+}
+
+#: The concrete scenario class each task's literals construct.
+RUBRIC_SCENARIO_CLASSES: dict[str, type[RubricScenario]] = {
+    "explanation_quality": ExplanationScenario,
+    "contestation_review": ContestationScenario,
+}
 
 # Marker line whose *following* bytes the recorded digest covers, so a hand edit of the data is
 # detectable from the file alone — no need to re-run the generator.
@@ -922,8 +997,8 @@ def _py_str(value: str) -> str:
     return f'"{escaped}"'
 
 
-def _wrap(value: str, indent: str) -> list[str]:
-    """Emit ``value`` as one or more string-literal lines, joined by implicit concatenation."""
+def _wrap_chunks(value: str) -> list[str]:
+    """Split ``value`` at spaces into chunks that re-concatenate to exactly ``value``."""
     words = value.split(" ")
     chunks: list[str] = []
     current = ""
@@ -937,7 +1012,12 @@ def _wrap(value: str, indent: str) -> list[str]:
     chunks.append(current)
     if "".join(chunks) != value:
         raise AssertionError(f"wrapping changed the text: {value!r}")
-    return [f"{indent}{_py_str(chunk)}" for chunk in chunks]
+    return chunks
+
+
+def _wrap(value: str, indent: str) -> list[str]:
+    """Emit ``value`` as one or more string-literal lines, joined by implicit concatenation."""
+    return [f"{indent}{_py_str(chunk)}" for chunk in _wrap_chunks(value)]
 
 
 def _field_lines(name: str, value: str, indent: str) -> list[str]:
@@ -1260,6 +1340,705 @@ def render_spot_check(scenarios: Sequence[BrazilBBQScenario]) -> str:
     return "\n".join(lines)
 
 
+# =========================================================================================
+# Phase 3 — the rubric-task scenarios (explanation_quality, contestation_review)
+#
+# Same machinery, different scenario shape. Unlike the BBQ half there is no combinatorial
+# expansion here: a coverage denial and a loan denial share no template, and pretending they do
+# would produce twelve rewordings of one situation. The variants are authored in
+# ``brazil_rubric_scenarios.py``; what this half contributes is the validation gate, the
+# deterministic emission, the provenance, the held-out assignment and the drift guard. Describe it
+# as **authored, deterministically assembled and machine-validated**, never as "generated content".
+# =========================================================================================
+
+
+def _rubric_provenance(plan: RubricTaskPlan, variant: RubricVariant) -> str:
+    """The per-scenario provenance string for a rubric scenario."""
+    return (
+        f"{GENERATED_PROVENANCE_PREFIX} ({GENERATOR_COMMAND}): "
+        f"task={plan.task}; "
+        f"domain={variant.domain}; "
+        f"variant={variant.key}; "
+        f"anchor={variant.anchor}"
+    )
+
+
+def rubric_scenarios_for(plan: RubricTaskPlan) -> list[RubricScenario]:
+    """Build one task's scenario objects from its authored variants, in declaration order."""
+    scenario_class = RUBRIC_SCENARIO_CLASSES[plan.task]
+    return [
+        scenario_class(
+            id=variant.key,
+            domain=variant.domain,
+            decision=variant.decision,
+            context=variant.context,
+            request=variant.request,
+            elicits=variant.elicits,
+            reference_answer=variant.reference_answer,
+            held_out=variant.held_out,
+            provenance=_rubric_provenance(plan, variant),
+        )
+        for variant in plan.variants
+    ]
+
+
+def generate_explanation_scenarios() -> list[ExplanationScenario]:
+    """The nine iteration-2 ``explanation_quality`` scenarios (2+2+2 new + 3 health_coverage)."""
+    plan = rubric_plan("explanation_quality")
+    return [s for s in rubric_scenarios_for(plan) if isinstance(s, ExplanationScenario)]
+
+
+def generate_contestation_scenarios() -> list[ContestationScenario]:
+    """The eight iteration-2 ``contestation_review`` scenarios (two per existing domain)."""
+    plan = rubric_plan("contestation_review")
+    return [s for s in rubric_scenarios_for(plan) if isinstance(s, ContestationScenario)]
+
+
+def rubric_plan(task: str) -> RubricTaskPlan:
+    """The :class:`RubricTaskPlan` for ``task``."""
+    for plan in RUBRIC_TASK_PLANS:
+        if plan.task == task:
+            return plan
+    raise KeyError(f"no rubric task plan for {task!r}")
+
+
+# ---------------------------------------------------------------------------------------
+# Rubric validation
+# ---------------------------------------------------------------------------------------
+
+
+def _fold(text: str) -> str:
+    """Lower-case and strip pt-BR diacritics, mirroring the scorers' own ``_normalize``."""
+    table = str.maketrans(
+        "áàâãäéèêëíìîïóòôõöúùûüçÁÀÂÃÄÉÈÊËÍÌÎÏÓÒÔÕÖÚÙÛÜÇ",
+        "aaaaaeeeeiiiiooooouuuucAAAAAEEEEIIIIOOOOOUUUUC",
+    )
+    return text.translate(table).lower()
+
+
+def _content_tokens(text: str) -> set[str]:
+    """Distinctive words of a text: length ≥ 6, not a shared-vocabulary stopword."""
+    words = {
+        word.strip(",.;:?!()º\"'").lower()
+        for word in text.replace("\n", " ").split(" ")
+    }
+    return {
+        word
+        for word in words
+        if len(word) >= 6 and word not in CONTENT_STOPWORDS and not word.isdigit()
+    }
+
+
+def _overlap(first: str, second: str) -> float:
+    """Jaccard overlap of two texts' distinctive content words."""
+    left, right = _content_tokens(first), _content_tokens(second)
+    if not left or not right:
+        return 0.0
+    return len(left & right) / len(left | right)
+
+
+def _rubric_text_problems(text: str, where: str) -> list[str]:
+    """The mechanical pt-BR / formatting lints, run over each prose field of every scenario."""
+    problems: list[str] = []
+    if not text.strip():
+        problems.append(f"{where}: empty")
+        return problems
+    for placeholder in _placeholders(text):
+        problems.append(f"{where}: unreplaced placeholder {{{placeholder}}}")
+    if "  " in text:
+        problems.append(f"{where}: doubled whitespace")
+    if text != text.strip():
+        problems.append(f"{where}: leading or trailing whitespace")
+    if text.rstrip()[-1] not in ".?!":
+        problems.append(f"{where}: no terminal punctuation")
+    if " ," in text or " ." in text:
+        problems.append(f"{where}: space before punctuation")
+    problems.extend(contraction_problems(text, where))
+    problems.extend(repeated_word_problems(text, where))
+    folded = _fold(text)
+    for word in ENGLISH_WORDS:
+        if re.search(rf"\b{re.escape(word)}\b", folded):
+            problems.append(
+                f"{where}: English word {word!r} in a pt-BR scenario — every prompt this "
+                f"benchmark ships is Portuguese"
+            )
+    # The shape fix for the same check. A deny-list only catches words someone thought of, and
+    # the review found "solely-automated" shipped in a prompt precisely because *solely* and
+    # *automated* were not on it. Portuguese has no native words in these suffixes.
+    for token in re.findall(r"[a-z]{3,}", folded):
+        if token in PT_BR_LOANWORDS or token in ENGLISH_WORDS:
+            continue  # already reported by the deny-list above; do not double-report
+        for suffix in ENGLISH_SUFFIXES:
+            if token.endswith(suffix) and len(token) > len(suffix) + 2:
+                problems.append(
+                    f"{where}: {token!r} ends in the English suffix {suffix!r} and is not a "
+                    f"pt-BR loanword — every prompt this benchmark ships is Portuguese (add it "
+                    f"to PT_BR_LOANWORDS with a reason if it really is Brazilian register)"
+                )
+                break
+    for term in GLOBAL_FORBIDDEN:
+        if _fold(term) in folded:
+            problems.append(f"{where}: wrong-register term {term!r}")
+    return problems
+
+
+def _rubric_vocabulary_problems(
+    scenario: RubricScenario, plan: RubricTaskPlan
+) -> list[str]:
+    """Domain-vocabulary anchoring, wrong-domain terms, and the conditional rules."""
+    problems: list[str] = []
+    where = f"{plan.task}/{scenario.id}"
+    folded = _fold(scenario.text)
+
+    vocabularies = {entry.domain: entry for entry in plan.vocabulary}
+    vocabulary = vocabularies.get(scenario.domain)
+    if vocabulary is None:
+        problems.append(f"{where}: no DomainVocabulary declared for {scenario.domain!r}")
+        return problems
+
+    if not any(_fold(term) in folded for term in vocabulary.required_any):
+        problems.append(
+            f"{where}: domain {scenario.domain!r} is not anchored — none of "
+            f"{list(vocabulary.required_any)} appears, so the scenario could belong to any domain"
+        )
+    for term in vocabulary.forbidden:
+        if _fold(term) in folded:
+            problems.append(
+                f"{where}: {term!r} belongs to another domain's vocabulary, not to "
+                f"{scenario.domain!r}"
+            )
+
+    for rule in CONDITIONAL_VOCABULARY_RULES:
+        if _fold(rule.forbidden) not in folded:
+            continue
+        if not any(_fold(trigger) in folded for trigger in rule.when_present):
+            continue
+        if any(_fold(allow) in folded for allow in rule.unless_present):
+            continue
+        problems.append(f"{where}: {rule.forbidden!r} is wrong here — {rule.why}")
+    return problems
+
+
+def _rubric_elicitation_problems(
+    scenario: RubricScenario, plan: RubricTaskPlan
+) -> list[str]:
+    """The elicitation-licence audit: completeness, verbatim spans, parity, and leakage."""
+    problems: list[str] = []
+    where = f"{plan.task}/{scenario.id}"
+
+    recorded = tuple(key for key, _ in scenario.elicits)
+    if recorded != plan.rubric_elements:
+        problems.append(
+            f"{where}: elicits keys {list(recorded)} must be exactly the rubric elements "
+            f"{list(plan.rubric_elements)}, in order"
+        )
+        return problems
+
+    for element, span in scenario.elicits:
+        if span == FRAME_LICENCE:
+            continue
+        if len(span) < MIN_LICENCE_SPAN:
+            problems.append(
+                f"{where}: the licence span for {element!r} is {len(span)} characters — a word "
+                f"is not evidence (minimum {MIN_LICENCE_SPAN})"
+            )
+        if span not in scenario.text:
+            problems.append(
+                f"{where}: the licence span for {element!r} is not verbatim in the scenario "
+                f"text: {span!r}"
+            )
+
+    frame = frame_licensed_elements(scenario)
+    if frame != plan.frame_licensed:
+        problems.append(
+            f"{where}: frame-licensed elements {sorted(frame)} differ from this task's parity "
+            f"set {sorted(plan.frame_licensed)}. Every scenario of a task must license the same "
+            f"elements from the frame, or an expansion silently changes what the benchmark "
+            f"measures (and a scenario that states a frame element hands the model the answer)"
+        )
+
+    folded = _fold(scenario.text)
+    for element in sorted(plan.frame_licensed):
+        for term in LEAK_TERMS.get(element, ()):
+            if _fold(term) in folded:
+                problems.append(
+                    f"{where}: {term!r} leaks {element!r} — that element is supposed to come "
+                    f"from the task frame, so stating it in the scenario hands the model a free "
+                    f"rubric point the other scenarios make it earn"
+                )
+
+    # The stronger half of the same guard, unlocked by the Phase 3 cue fix: run the **real
+    # detector** over the scenario text and refuse any frame-licensed element the scorer would
+    # actually credit. Before the cues were word-bounded this was unusable (see RUBRIC_DETECTORS).
+    detected = RUBRIC_DETECTORS[plan.task](scenario.text)
+    for element in sorted(plan.frame_licensed):
+        if detected.get(element):
+            problems.append(
+                f"{where}: the real deterministic detector already scores {element!r} from this "
+                f"scenario's own text — a model could earn that rubric point by echoing the "
+                f"prompt, while the other scenarios make it supply the element itself"
+            )
+    return problems
+
+
+def _rubric_reference_problems(
+    scenario: RubricScenario, plan: RubricTaskPlan
+) -> list[str]:
+    """The reference answer must score 1.0 **and** be grounded in this scenario's own facts."""
+    problems: list[str] = []
+    where = f"{plan.task}/{scenario.id}"
+    score = RUBRIC_SCORERS[plan.task](scenario.reference_answer)
+    if score != 1.0:
+        problems.append(
+            f"{where}: the reference answer scores {score:.3f}, not 1.0 — so this scenario is "
+            f"not demonstrably able to elicit every element it is scored on, and a low model "
+            f"score here would be ambiguous between the model and the scenario"
+        )
+    shared = _content_tokens(scenario.reference_answer) & _content_tokens(scenario.text)
+    if len(shared) < MIN_REFERENCE_GROUNDING_TOKENS:
+        problems.append(
+            f"{where}: the reference answer shares only {len(shared)} distinctive words with "
+            f"the scenario ({sorted(shared)}) — a perfect score earned by boilerplate that "
+            f"would fit any scenario proves nothing about this one "
+            f"(minimum {MIN_REFERENCE_GROUNDING_TOKENS})"
+        )
+    return problems
+
+
+def _rubric_register_problems(scenario: RubricScenario, plan: RubricTaskPlan) -> list[str]:
+    """Register consistency: whose voice each field is in, and that the decision is automated."""
+    problems: list[str] = []
+    where = f"{plan.task}/{scenario.id}"
+
+    folded_request = _fold(scenario.request)
+    first_person = ("sou ", "quero", "preciso", "gostaria", "meu ", "minha ")
+    if not any(marker in folded_request for marker in first_person):
+        problems.append(
+            f"{where}: the request is not in the affected person's own voice (expected one of "
+            f"{list(first_person)}) — every iteration-1 scenario is, and the rubric's "
+            f"contestation/human-review elements are licensed by it"
+        )
+
+    folded_decision = _fold(scenario.decision)
+    automated = ("automatizad", "automaticamente", "automatico", "exclusivamente pelo")
+    if not any(marker in folded_decision for marker in automated):
+        problems.append(
+            f"{where}: the decision does not read as automated (expected one of "
+            f"{list(automated)}) — Art. 6 rights attach to automated decisions, so a scenario "
+            f"that does not say the decision was automated is off-benchmark"
+        )
+    return problems
+
+
+def _rubric_anchor_problems(plan: RubricTaskPlan) -> list[str]:
+    """Every authored variant's legal anchor must be registered in :data:`RESEARCH_ANCHORS`.
+
+    ``RubricVariant.anchor``'s docstring has always said "only instruments the committed research
+    actually carries may appear here", and nothing enforced it, so the rule lapsed silently: the
+    Phase 3 review found both credit anchors ungrounded. This is that sentence, as a lint.
+
+    A property of the *plan*, not of any particular scenario list, so it reports identically
+    whether the generator calls it with the authored variants or the suite calls it with the
+    union — which is what makes it impossible to reintroduce by editing data.
+    """
+    problems: list[str] = []
+    for variant in plan.variants:
+        if variant.anchor not in RESEARCH_ANCHORS:
+            problems.append(
+                f"{plan.task}/{variant.key}: legal anchor {variant.anchor!r} is not in "
+                f"RESEARCH_ANCHORS — an anchor reaches the provenance string and thence the "
+                f"paper, so it must name where the committed research carries the instrument. "
+                f"Add the instrument to the research and register it, or use a registered one"
+            )
+    return problems
+
+
+def rubric_scenario_problems(
+    scenarios: Sequence[RubricScenario], plan: RubricTaskPlan
+) -> list[str]:
+    """Every invariant that must hold for a rubric task's scenarios.
+
+    Runs over **any** list, which is the point: the generator calls it with the authored variants
+    it is about to write, and the test suite calls it with the full committed set — the
+    iteration-1 pilot scenarios included. That split is what stopped the ``bbq_brazil`` A4 defect
+    from being caught (its rule and its test both existed and both only ever ran over the
+    generated half), so this one is built to be run over the union from the start.
+    """
+    problems: list[str] = list(_rubric_anchor_problems(plan))
+    task = plan.task
+
+    seen_ids: set[str] = set()
+    for scenario in scenarios:
+        where = f"{task}/{scenario.id}"
+        if scenario.id in seen_ids:
+            problems.append(f"{where}: duplicate scenario id")
+        seen_ids.add(scenario.id)
+        if not scenario.id.replace("_", "").isalnum():
+            problems.append(f"{where}: id must be identifier-shaped (letters, digits and '_')")
+        for separator in _PROVENANCE_SEPARATORS:
+            if separator in scenario.id or separator in scenario.domain:
+                problems.append(
+                    f"{where}: {separator!r} would break the key=value provenance format"
+                )
+        if scenario.domain not in plan.domain_order:
+            problems.append(f"{where}: unknown domain {scenario.domain!r}")
+
+        for field_name in ("decision", "context", "request"):
+            problems.extend(
+                _rubric_text_problems(getattr(scenario, field_name), f"{where}.{field_name}")
+            )
+        problems.extend(_rubric_vocabulary_problems(scenario, plan))
+        problems.extend(_rubric_elicitation_problems(scenario, plan))
+        problems.extend(_rubric_reference_problems(scenario, plan))
+        problems.extend(_rubric_register_problems(scenario, plan))
+        if scenario.held_out and scenario.id in plan.seed_ids:
+            problems.append(
+                f"{where}: an iteration-1 pilot scenario cannot be held out — the held-out slice "
+                f"exists to be free of the cue-list tuning those scenarios were used for"
+            )
+
+    # Cross-scenario: no near-duplicates, and every prose field distinct.
+    for field_name in ("decision", "context", "request"):
+        values = [getattr(scenario, field_name) for scenario in scenarios]
+        duplicates = {value for value in values if values.count(value) > 1}
+        for value in sorted(duplicates):
+            problems.append(f"{task}: duplicate {field_name}: {value[:60]!r}…")
+
+    for domain in plan.domain_order:
+        in_domain = [s for s in scenarios if s.domain == domain]
+        for index, first in enumerate(in_domain):
+            for second in in_domain[index + 1 :]:
+                overlap = _overlap(first.text, second.text)
+                if overlap > MAX_INTRA_DOMAIN_OVERLAP:
+                    problems.append(
+                        f"{task}/{domain}: {first.id!r} and {second.id!r} overlap {overlap:.2f} "
+                        f"on distinctive vocabulary (limit {MAX_INTRA_DOMAIN_OVERLAP}) — the "
+                        f"three variants of a domain must be different situations, not one "
+                        f"situation reworded"
+                    )
+    return problems
+
+
+def validate_rubric_scenarios(
+    scenarios: Sequence[RubricScenario], plan: RubricTaskPlan, *, complete: bool
+) -> list[str]:
+    """:func:`rubric_scenario_problems` plus the counts that only hold for a *complete* set.
+
+    ``complete=False`` is what the generator uses, because it sees only the authored variants —
+    the iteration-1 pilot scenarios live in ``dataset.py``, which the generator must not import
+    (it imports the module the generator writes). The test suite calls it with ``complete=True``
+    over the union.
+    """
+    problems = list(rubric_scenario_problems(scenarios, plan))
+
+    # The held-out composition **is** checkable without the pilot rows, because a pilot row can
+    # never be held out (the slice exists to be free of the cue-list tuning they were used for).
+    # So it runs in both modes: a missing held-out domain is caught by the generator, not left
+    # for the suite.
+    for domain in plan.domain_order:
+        in_domain = [s for s in scenarios if s.domain == domain]
+        held_out = [s for s in in_domain if s.held_out]
+        if len(held_out) != plan.held_out_per_domain:
+            problems.append(
+                f"{plan.task}/{domain}: {len(held_out)} held-out variants, expected "
+                f"{plan.held_out_per_domain} — the held-out slice is domain-balanced by design"
+            )
+        if in_domain and held_out and in_domain[-1] is not held_out[-1]:
+            problems.append(
+                f"{plan.task}/{domain}: the held-out variant is not the last one of its domain, "
+                f"which is the stated selection rule"
+            )
+
+    if not complete:
+        return problems
+
+    expected_total = len(plan.domain_order) * plan.variants_per_domain
+    if len(scenarios) != expected_total:
+        problems.append(
+            f"{plan.task}: {len(scenarios)} scenarios, expected {expected_total} "
+            f"({len(plan.domain_order)} domains × {plan.variants_per_domain} variants)"
+        )
+    for domain in plan.domain_order:
+        in_domain = [s for s in scenarios if s.domain == domain]
+        if len(in_domain) != plan.variants_per_domain:
+            problems.append(
+                f"{plan.task}/{domain}: {len(in_domain)} variants, expected "
+                f"{plan.variants_per_domain}"
+            )
+    return problems
+
+
+# ---------------------------------------------------------------------------------------
+# Emitting the rubric modules
+# ---------------------------------------------------------------------------------------
+
+
+def _py_str_nl(value: str) -> str:
+    """A double-quoted Python literal for ``value``, escaping newlines rather than rejecting."""
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    )
+    if any(ord(ch) < 0x20 for ch in value.replace("\n", "")):
+        raise ValueError(f"control character in scenario text: {value!r}")
+    return f'"{escaped}"'
+
+
+def _text_field_lines(name: str, value: str, indent: str) -> list[str]:
+    """``name="value",`` — wrapped, and newline-safe (the reference answers are multi-line)."""
+    single = f"{indent}{name}={_py_str_nl(value)},"
+    if "\n" not in value and len(single) <= 96:
+        return [single]
+    lines = [f"{indent}{name}=("]
+    parts = value.split("\n")
+    for part_index, part in enumerate(parts):
+        tail = "\n" if part_index < len(parts) - 1 else ""
+        chunks = _wrap_chunks(part)
+        for chunk_index, chunk in enumerate(chunks):
+            piece = chunk + (tail if chunk_index == len(chunks) - 1 else "")
+            lines.append(f"{indent}    {_py_str_nl(piece)}")
+    lines.append(f"{indent}),")
+    return lines
+
+
+def _elicits_lines(scenario: RubricScenario, indent: str) -> list[str]:
+    """Render the elicitation audit as a tuple of ``(element, licence)`` pairs."""
+    lines = [f"{indent}elicits=("]
+    inner = indent + "    "
+    for element, span in scenario.elicits:
+        single = f'{inner}({_py_str(element)}, {_py_str(span)}),'
+        if len(single) <= 96:
+            lines.append(single)
+            continue
+        lines.append(f"{inner}(")
+        lines.append(f"{inner}    {_py_str(element)},")
+        lines.extend(_wrap(span, inner + "    "))
+        lines.append(f"{inner}),")
+    lines.append(f"{indent}),")
+    return lines
+
+
+def _rubric_scenario_lines(scenario: RubricScenario, plan: RubricTaskPlan) -> list[str]:
+    indent = " " * 8
+    lines = [f"    {plan.scenario_class}("]
+    for name in ("id", "domain"):
+        lines.append(f"{indent}{name}={_py_str(getattr(scenario, name))},")
+    for name in ("decision", "context", "request"):
+        lines.extend(_field_lines(name, getattr(scenario, name), indent))
+    lines.extend(_elicits_lines(scenario, indent))
+    lines.extend(_text_field_lines("reference_answer", scenario.reference_answer, indent))
+    lines.append(f"{indent}held_out={scenario.held_out},")
+    lines.extend(_field_lines("provenance", scenario.provenance, indent))
+    lines.append("    ),")
+    return lines
+
+
+def render_rubric_module(
+    scenarios: Sequence[RubricScenario], plan: RubricTaskPlan
+) -> str:
+    """Render one rubric task's ``generated.py``. Same scenarios in, byte-identical source out."""
+    counts = ", ".join(
+        f"{domain} {sum(1 for s in scenarios if s.domain == domain)}"
+        for domain in plan.domain_order
+    )
+    held_out = sum(1 for s in scenarios if s.held_out)
+
+    body_lines: list[str] = [
+        f"# scenarios: {len(scenarios)} ({counts}) · held out: {held_out}",
+        "",
+        f'"""Generated {plan.task} scenarios — do not edit by hand.',
+        "",
+        "Produced by ``tools/generate_brazil_scenarios.py`` from the authored variants in",
+        "``tools/brazil_rubric_scenarios.py``. These are **authored** situations, deterministically",
+        "assembled and machine-validated — not combinatorially generated text: a coverage denial",
+        "and a loan denial share no template, and templating them would produce rewordings of one",
+        "situation rather than distinct ones.",
+        "",
+        "Every row carries the elicitation audit (``elicits``) — for each rubric element, either a",
+        "verbatim span of this scenario that licenses it or the marker saying the task frame does.",
+        "The set of frame-licensed elements is identical across all twelve scenarios of the task, so",
+        "the iteration-2 expansion cannot have made the benchmark easier, and no scenario hands the",
+        "model an element the others make it earn.",
+        "",
+        "``reference_answer`` never reaches a prompt. It exists so the suite can prove, with the",
+        "real deterministic scorer, that each scenario can elicit all six of its elements.",
+        '"""',
+        "",
+        "from __future__ import annotations",
+        "",
+        f"from {plan.scenario_module} import {plan.scenario_class}",
+        "",
+        "",
+        f"GENERATED_SCENARIOS: list[{plan.scenario_class}] = [",
+    ]
+    for scenario in scenarios:
+        body_lines.extend(_rubric_scenario_lines(scenario, plan))
+    body_lines.append("]")
+    body_lines.append("")
+
+    body = "\n".join(body_lines)
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+
+    header_lines = [
+        "# Generated file — DO NOT EDIT BY HAND.",
+        "#",
+        f"# Regenerate with:  {GENERATOR_COMMAND}",
+        "#",
+        f"# tests/test_{plan.task}.py pins this file byte-for-byte against the generator's",
+        "# output, and pins the digest below against the sha256 of every byte that follows it —",
+        "# so a hand edit fails the suite even without re-running the generator.",
+        "#",
+        f"{DIGEST_MARKER}{digest}",
+    ]
+    return "\n".join(header_lines) + "\n" + body
+
+
+# ---------------------------------------------------------------------------------------
+# The rubric reviewer artifact
+# ---------------------------------------------------------------------------------------
+
+
+def render_rubric_spot_check(
+    scenario_sets: Sequence[tuple[RubricTaskPlan, Sequence[RubricScenario]]],
+) -> str:
+    """Render the human review sheet for the authored rubric scenarios.
+
+    **Selection rule: none.** Every authored scenario is shown, in generation order — 17 is small
+    enough to review exhaustively, so there is no sample to be flattering. (The ``bbq_brazil``
+    sheet samples because 78 is not.) The iteration-1 pilot scenarios are *not* shown, because
+    this generator must not import the ``dataset`` modules it writes into; their elicitation audit
+    is asserted by the test suite instead, against the same parity set printed below.
+    """
+    total = sum(len(scenarios) for _, scenarios in scenario_sets)
+    lines = [
+        "# Art. 6 rubric scenarios — human review sheet",
+        "",
+        f"<!-- Generated by {GENERATOR_COMMAND} — do not edit by hand. -->",
+        "",
+        f"The **{total} authored iteration-2 scenarios** behind `explanation_quality` (Art. 6, I)",
+        "and `contestation_review` (Art. 6, II-III), which take both benchmarks to **12 scenarios",
+        "(4 domains × 3 variants)** with a **held-out slice of 4** the Phase 6 LLM judge grades.",
+        "All of them are shown: at this size there is no sampling rule to argue about.",
+        "",
+        "## What is already machine-checked, over all 12 scenarios of each task",
+        "",
+        "You do not need to look for any of this — the generator refuses to write, and the test",
+        "suite fails, if any of it breaks:",
+        "",
+        "- **Every scenario can elicit every element it is scored on.** Each row carries a",
+        "  `reference_answer` that the *real deterministic scorer* must score exactly **1.0**, and",
+        "  that must reuse at least five of the scenario's own distinctive words — so a perfect",
+        "  score cannot be earned by boilerplate. A scenario that could not elicit an element",
+        "  would depress the score for the wrong reason; this is the guard against that.",
+        "- **Elicitation licences.** For each rubric element the scenario records either a",
+        "  *verbatim span* of its own text that licenses the element, or the marker saying the",
+        "  task frame does. Spans are checked to occur in the text, character for character.",
+        "- **Licence parity.** The set of frame-licensed elements is **identical across all 12",
+        "  scenarios of a task**, iteration-1 pilot rows included. This is what stops the n=3 → 12",
+        "  expansion from quietly making the benchmark easier, and it doubles as a leakage guard:",
+        "  a scenario that named an *ouvidoria* or a *prazo* would hand the model an element the",
+        "  other eleven make it earn.",
+        "- **Domain vocabulary.** Each domain declares terms it must anchor on and terms that",
+        "  belong to another domain, plus conditional rules for the errors this project has",
+        "  actually shipped before — *fatura* for a loan repaid in *parcelas*, *recuperação* in a",
+        "  university setting, *segurado* for a health-plan *beneficiário*.",
+        "- **No near-duplicates.** The three variants of a domain must overlap on less than",
+        f"  {MAX_INTRA_DOMAIN_OVERLAP:.0%} of their distinctive vocabulary, so they are different",
+        "  situations rather than one situation reworded.",
+        "- **Held-out composition.** Exactly one held-out variant per domain, always the last of",
+        "  its domain, and **never an iteration-1 pilot scenario** — the point of the slice is to",
+        "  be free of the cue-list tuning those rows were used for.",
+        "- **pt-BR mechanics.** No unreplaced placeholders, no doubled whitespace or stray",
+        "  punctuation, obligatory preposition+article contractions, no repeated words, no",
+        "  English leaking into a Portuguese prompt.",
+        "- **Register.** The request is in the affected person's own voice; the decision reads as",
+        "  automated (Art. 6 rights attach to automated decisions).",
+        "",
+        "## What is left for you",
+        "",
+        "1. **Does the Portuguese read as Brazilian-authored** rather than translated — including",
+        "   the institutional register a bank, an employer, an INSS unit or a health-plan operator",
+        "   actually writes in?",
+        "2. **Is the domain vocabulary right?** This is the highest-risk item and the reason this",
+        "   sheet exists. Health-plan and consumer-finance terms are the exposure: *negativa de",
+        "   cobertura*, *rol da ANS*, *diretriz de utilização*, *carência*, *cobertura parcial",
+        "   temporária*, *junta médica*, *reembolso*, *coparticipação*, *beneficiário* — and on the",
+        "   finance side *parcelas* vs *fatura*, *entrada*, *faixa de risco*, *birô de crédito*,",
+        "   *Cadastro Positivo*.",
+        "3. **Does each licence span really license its element?** They are printed under every",
+        "   scenario. The one to look hardest at is the *frame-licensed* set: those elements have",
+        "   no span at all, by design, and the claim is that the task frame plus the few-shot",
+        "   exemplar is enough. If you disagree for a given element, that is a finding.",
+        "4. **Is the reference answer something a compliant institution would actually send?** It",
+        "   scores 1.0 by construction; whether it would satisfy a Brazilian reading Art. 6 is not",
+        "   something the scorer can tell you.",
+        "5. **Are the three variants of a domain genuinely different situations?** The overlap",
+        "   measure only sees vocabulary.",
+        "",
+        "Record findings in `docs/task-artifacts/iteration-2-implementation-log.md` (Phase 3), not",
+        "in this file — it is regenerated and byte-compared by the test suite.",
+        "",
+    ]
+
+    for plan, scenarios in scenario_sets:
+        lines.extend(
+            [
+                f"## `{plan.task}`",
+                "",
+                f"- **Domains:** {', '.join(f'`{d}`' for d in plan.domain_order)}",
+                "- **Frame-licensed elements** (no span, by design, in *every* scenario of this "
+                f"task): {', '.join(f'`{e}`' for e in sorted(plan.frame_licensed))}",
+                f"- **Authored here:** {len(scenarios)}; the remaining "
+                f"{len(plan.seed_ids)} are the iteration-1 pilot scenarios in `dataset.py`.",
+                "",
+            ]
+        )
+        for scenario in scenarios:
+            held_out = " · **held out**" if scenario.held_out else ""
+            lines.extend(
+                [
+                    f"### `{plan.task}` · `{scenario.domain}` · `{scenario.id}`{held_out}",
+                    "",
+                    f"- **Provenance:** `{scenario.provenance}`",
+                    "",
+                    "**Prompt fields** (these three, and only these three, reach the model):",
+                    "",
+                    "```text",
+                    f"Decisão: {scenario.decision}",
+                    "",
+                    f"Contexto da decisão: {scenario.context}",
+                    "",
+                    f"Pedido da pessoa afetada: {scenario.request}",
+                    "```",
+                    "",
+                    "**Elicitation licences** — what in the scenario lets a compliant answer "
+                    "produce each scored element:",
+                    "",
+                    "| Rubric element | Licensed by |",
+                    "|---|---|",
+                ]
+            )
+            for element, span in scenario.elicits:
+                shown = (
+                    "_task frame only (no span, by design)_"
+                    if span == FRAME_LICENCE
+                    else f"“{span}”"
+                )
+                lines.append(f"| `{element}` | {shown} |")
+            lines.extend(
+                [
+                    "",
+                    "**Reference answer** — not shown to the model; scored 1.0 by the real "
+                    "deterministic scorer:",
+                    "",
+                    "```text",
+                    scenario.reference_answer,
+                    "```",
+                    "",
+                ]
+            )
+    return "\n".join(lines)
+
+
 # ---------------------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------------------
@@ -1295,6 +2074,48 @@ def main() -> int:
     print(
         f"  {SPOT_CHECK_PER_CATEGORY} scenarios × {len(CATEGORY_ORDER)} categories for the "
         "human pt-BR review"
+    )
+
+    return _write_rubric_scenarios()
+
+
+def _write_rubric_scenarios() -> int:
+    """Phase 3: validate and emit the two rubric tasks' literals plus their review sheet."""
+    rendered: list[tuple[RubricTaskPlan, list[RubricScenario], str]] = []
+    for plan in RUBRIC_TASK_PLANS:
+        scenarios = rubric_scenarios_for(plan)
+        # ``complete=False``: the generator sees only the authored variants. The iteration-1
+        # pilot scenarios live in the ``dataset`` modules, which this file must never import —
+        # they import the very files it writes. The suite runs the same checks over the union.
+        problems = validate_rubric_scenarios(scenarios, plan, complete=False)
+        if problems:
+            _report(f"{plan.task} scenarios", problems)
+            return 1
+        module_source = render_rubric_module(scenarios, plan)
+        recorded, computed = body_digest(module_source)
+        if recorded != computed:  # pragma: no cover - defensive
+            print(f"✗ digest mismatch in the rendered {plan.task} module", file=sys.stderr)
+            return 1
+        rendered.append((plan, scenarios, module_source))
+
+    for plan, scenarios, module_source in rendered:
+        path = rubric_generated_path(plan)
+        path.write_text(module_source, encoding="utf-8")
+        held_out = sum(1 for s in scenarios if s.held_out)
+        _, computed = body_digest(module_source)
+        print(f"✓ wrote {path.relative_to(_REPO_ROOT)}")
+        print(
+            f"  {len(scenarios)} authored {plan.task} scenarios ({held_out} held out) · "
+            f"content-sha256 {computed[:16]}…"
+        )
+
+    review = render_rubric_spot_check([(plan, scenarios) for plan, scenarios, _ in rendered])
+    RUBRIC_SPOT_CHECK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    RUBRIC_SPOT_CHECK_PATH.write_text(review, encoding="utf-8")
+    print(f"✓ wrote {RUBRIC_SPOT_CHECK_PATH.relative_to(_REPO_ROOT)}")
+    print(
+        f"  {sum(len(s) for _, s, _ in rendered)} scenarios, shown in full, for the human "
+        "pt-BR and domain-vocabulary review"
     )
     return 0
 

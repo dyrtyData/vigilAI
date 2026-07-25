@@ -35,11 +35,45 @@ content cues (e.g. a contestation element is present if the text mentions contes
 The label-or-cues design means the few-shot-guided structured answer scores 1.0 while a
 terse, non-compliant denial scores low — exactly the spread the outline asks the tests to
 assert.
+
+Cue matching is **word-bounded** (Phase 3 fix, 2026-07-25)
+---------------------------------------------------------
+
+The Phase 3 LLM-judge review found six over-broad cues in the sibling ``contestation_review``
+scorer, which folds accents and matched by plain substring exactly as this one did. This module
+was swept for the same class of defect; five instances were found and are closed by the same
+structural change — :func:`_contains_any` now matches a **single-token** cue only on word
+boundaries, mirroring what :func:`_has_label` already did for single-word labels:
+
+===================  ==================  =============================================
+Cue                  Element             Was matched inside
+===================  ==================  =============================================
+``"criterio"``       ``criteria_used``   *criteriosa*, *criteriosamente* ("de forma criteriosa")
+``"fator"``          ``criteria_used``   *satisfatório*, *satisfatória*, *fatorial*
+``"report"``         ``data_considered`` *reportagem* (a news report is not a data source)
+``"since"``          ``logic_chain``     *sincere*, **Sincerely,** — an English sign-off scored reasoning
+``"confianca"``      ``confidence_level``*desconfiança*
+===================  ==================  =============================================
+
+One further finding is **not** fixable by word boundaries and is recorded rather than patched by
+it: ``"data"`` is a homograph. In English it is the mass noun this element is about; in pt-BR it
+means *date*, and every scenario in this benchmark mentions one ("a data de dispensa", "a data de
+início de vigência"), so the bare cue handed ``data_considered`` to any Portuguese answer for
+free. It is therefore **removed** from :data:`_DATA_CUES`. English recall is preserved by the
+three multi-word labels ``data considered`` / ``data processed`` / ``data used`` (matched
+anywhere, no colon required) plus ``information`` / ``record`` / ``report`` / ``statement`` and
+their plurals. Verified lossless against all 12 reference answers and both exemplars.
+
+Word-bounded matching is stricter, so inflected forms a compliant answer plausibly uses are now
+listed **explicitly** (``criterios``, ``documentos``, ``relatorios``, …) rather than being caught
+by substring accident. **This overrides the structure outline's Phase 3 constraint that scorer
+cue groups stay untouched** — see the sibling module's docstring for why.
 """
 
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
 from inspect_ai.scorer import mean
 from inspect_ai.scorer import Score
@@ -52,8 +86,16 @@ from inspect_ai.solver import TaskState
 
 # ---------------------------------------------------------------------------------------
 # The rubric (design §5). Maps each element key -> the human-readable question the element
-# answers. Surfaced to the model in the system prompt (see ``explanation_quality.py``) and
-# used as the canonical element list everywhere else.
+# answers.
+#
+# **Not** surfaced to the model. An earlier version of this comment claimed the rubric was
+# "surfaced to the model in the system prompt"; it is not, and the Phase 3 review corrected it.
+# ``explanation_quality.py`` puts only ``FEW_SHOT_EXAMPLE`` in the system message, and only when
+# ``num_fewshot >= 1``. The distinction matters for one element: ``confidence_level`` has **no
+# licence at all under ``num_fewshot=0``** — no scenario states a certainty figure (that is the
+# deliberate frame-licence parity choice, see ``scenario.py``), and the rubric text the model
+# would need instead never reaches it. See the ``num_fewshot`` docstring in
+# ``explanation_quality.py``.
 # ---------------------------------------------------------------------------------------
 EXPLANATION_RUBRIC: dict[str, str] = {
     "criteria_used": "Does the explanation identify the criteria/factors used?",
@@ -83,7 +125,10 @@ RUBRIC_ELEMENTS: tuple[str, ...] = tuple(EXPLANATION_RUBRIC.keys())
 #                   does NOT count).
 #
 # All matching is case-insensitive and accent-insensitive (we fold diacritics first) so the
-# detector is robust to "critérios" vs "criterios" and to casing.
+# detector is robust to "critérios" vs "criterios" and to casing, and **single-token cues match
+# on word boundaries** — see the module docstring for the five over-broad cues that made that
+# necessary and for the ``"data"`` homograph that boundaries could not fix. Because boundary
+# matching does not follow inflection, plural/derived forms are listed explicitly.
 # ---------------------------------------------------------------------------------------
 
 # Section-header labels (pt-BR + English) keyed by element. Presence of any of these
@@ -152,30 +197,44 @@ _LABELS: dict[str, tuple[str, ...]] = {
 # Content cues (used when no explicit label matched).
 _CRITERIA_CUES = (
     "criterio",
+    "criterios",
     "fator",
     "fatores",
     "com base em",
     "levou em conta",
     "criteria",
     "factor",
+    "factors",
     "based on",
     "took into account",
 )
+#: ``"data"`` is **deliberately absent** — see the module docstring. In pt-BR it means *date*, and
+#: every scenario here mentions one, so as a bare cue it handed this element to any Portuguese
+#: answer. The English sense is carried by the ``data considered`` / ``data processed`` /
+#: ``data used`` labels, which are multi-word and so match anywhere without needing a colon.
 _DATA_CUES = (
     "dados",
     "informacoes",
     "historico",
+    "historicos",
     "relatorio",
+    "relatorios",
     "extrato",
+    "extratos",
     "cadastro",
+    "cadastros",
     "documento",
+    "documentos",
     "registro",
-    "data",
+    "registros",
     "information",
     "record",
+    "records",
     "report",
+    "reports",
     "history",
     "statement",
+    "statements",
 )
 _LOGIC_CUES = (
     "porque",
@@ -185,8 +244,10 @@ _LOGIC_CUES = (
     "resultou em",
     "resultou",
     "excede",
+    "exceder",
     "excedeu",
     "ultrapassa",
+    "ultrapassar",
     "ultrapassou",
     "por isso",
     "deve-se",
@@ -235,6 +296,9 @@ _CHANGE_CUES = (
     "to qualify",
 )
 # Contestation needs an *action* cue and a *channel/deadline* cue (see ``_element_present``).
+#
+# ``"recursos"`` is deliberately absent here for the same reason as in the sibling scorer:
+# word-bounded ``"recurso"`` no longer matches *Recursos Humanos*, and the plural would undo that.
 _CONTEST_ACTION_CUES = (
     "contestar",
     "contestacao",
@@ -259,7 +323,9 @@ _CONTEST_CHANNEL_CUES = (
     "ouvidoria",
     "@",  # an e-mail address
     "e-mail",
+    "e-mails",
     "email",
+    "emails",
     "telefone",
     "prazo",
     "dias",
@@ -287,8 +353,46 @@ def _normalize(text: str) -> str:
     return text.translate(table).lower()
 
 
+def _is_word_cue(cue: str) -> bool:
+    """True if ``cue`` is a single token that should only match on word boundaries.
+
+    A cue qualifies when it holds no whitespace and both ends are alphanumeric. Everything else —
+    ``"@"``, ``"com base em"``, ``"if you"`` — keeps plain substring semantics, because a word
+    boundary around a punctuation mark or across a space either fails outright or means nothing.
+    (Identical to ``contestation_review.rubric._is_word_cue`` so the two Art. 6 detectors behave
+    consistently; the duplication is deliberate — neither task imports the other.)
+    """
+    return bool(cue) and " " not in cue and cue[0].isalnum() and cue[-1].isalnum()
+
+
+@lru_cache(maxsize=None)
+def _cue_matcher(needles: tuple[str, ...]) -> tuple[re.Pattern[str] | None, tuple[str, ...]]:
+    """Split a cue group into its word-bounded regex and its plain-substring remainder.
+
+    Cached per cue tuple: the groups are module constants, so this compiles once per group for
+    the life of the process, and :func:`detect_elements` stays cheap enough to run per sample.
+    """
+    word_cues = [cue for cue in needles if _is_word_cue(cue)]
+    substring_cues = tuple(cue for cue in needles if not _is_word_cue(cue))
+    pattern = (
+        re.compile(r"\b(?:" + "|".join(re.escape(cue) for cue in word_cues) + r")\b")
+        if word_cues
+        else None
+    )
+    return pattern, substring_cues
+
+
 def _contains_any(haystack: str, needles: tuple[str, ...]) -> bool:
-    return any(needle in haystack for needle in needles)
+    """True if any cue is present — single tokens as whole words, the rest as substrings.
+
+    The word-boundary rule is the Phase 3 sweep described in the module docstring; ``in`` alone
+    let *de forma criteriosa* satisfy ``criteria_used`` and an English *Sincerely,* satisfy
+    ``logic_chain``.
+    """
+    pattern, substring_cues = _cue_matcher(needles)
+    if pattern is not None and pattern.search(haystack):
+        return True
+    return any(needle in haystack for needle in substring_cues)
 
 
 def _has_label(normalized: str, element: str) -> bool:

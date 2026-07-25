@@ -117,22 +117,45 @@ files.extend-exclude = [
 #   * disabling `typos` for the repo is not on the table.
 # A genuine English typo anywhere in the repo is still reported.
 #
-# Note on `analise`: the correct pt-BR spelling is "análise". The unaccented form is
-# intentional in the scorers, whose `_normalize` folds accents before matching, so the cue
-# lists store accent-folded strings.
+# Note on `analise` and `automatico`: the correct pt-BR spellings are "análise" and
+# "automático". The unaccented forms are intentional — the scorers' `_normalize` and the
+# generator's `_fold` strip accents before matching, so the cue lists store accent-folded
+# strings. `candidat` is likewise a deliberate stem (it must match *candidato*, *candidata* and
+# *candidatura*), not a truncated word.
+#
+# The Phase 3 LLM-judge-review fixes added four more. `profissional` comes from the
+# `incapacity_benefit_denial` replacement scenario (Previdência register). `administrativo` is in
+# the F2 comment explaining that an *undeclared* DLP requires a **processo administrativo** before
+# the ANS, which is not the *junta médica*'s job. `analises` is an explicitly-listed pt-BR
+# inflection in the now word-bounded cue lists — boundary matching does not follow inflection, so
+# plural forms are spelled out rather than caught by substring accident. And `ment` is not a word
+# at all: it is one entry in `ENGLISH_SUFFIXES`, the pt-BR scenario lint's list of endings
+# Portuguese has no native words in.
+#
+# Phase 3 added `automatico`, `candidat`, `colateral`, `datas`, `oficial`, `requerimento` and
+# `termo`: the Art. 6 rubric datasets grew from 3-4 scenarios to 12 each, and the new pt-BR
+# consumer-finance, social-benefit and health-plan vocabulary tripped these. `colateral` is
+# listed because it is an *anglicism deny-list entry* in `tools/brazil_rubric_scenarios.py` — the
+# word appears there in order to be forbidden in scenario text.
 #
 # NOT silenced, and therefore still failing `uvx typos`: `explicitely` / `explicite` /
 # `explcitely` / `fo` in `src/vigilai/tasks/cab/*.json`. Those are real English typos in data
 # vendored from upstream COMPL-AI; they should be fixed in place (or the upstream files excluded
 # as vendored data) when Phase 10 makes `uvx typos` clean, not hidden behind a dictionary entry.
 [tool.typos.default.extend-words]
+administrativo = "administrativo"
 analise = "analise"
+analises = "analises"
+automatico = "automatico"
+candidat = "candidat"
 candidata = "candidata"
 classe = "classe"
 cliente = "cliente"
 clientes = "clientes"
+colateral = "colateral"
 comercial = "comercial"
 curso = "curso"
+datas = "datas"
 dependente = "dependente"
 disciplinas = "disciplinas"
 excede = "excede"
@@ -142,15 +165,20 @@ instituto = "instituto"
 itens = "itens"
 jornal = "jornal"
 limite = "limite"
+ment = "ment"          # not a word — an `ENGLISH_SUFFIXES` entry; see the note above
 momento = "momento"
+oficial = "oficial"
 potencial = "potencial"
 presentes = "presentes"
+profissional = "profissional"
 programa = "programa"
 registre = "registre"
+requerimento = "requerimento"
 responde = "responde"
 ser = "ser"
 suspenso = "suspenso"
 tema = "tema"
+termo = "termo"
 vai = "vai"
 # Not Portuguese, but correct as written in the committed research notes:
 # FPR = False Positive Rate; BA = the IBGE code for the state of Bahia.

@@ -3,9 +3,16 @@
 This is a **new** benchmark with no COMPL-AI/EU counterpart — and unlike ``explanation_quality``
 the absence is structural, not just a gap: the **EU AI Act has no individual right to contest a
 model output**. PL 2338/2023 Art. 6, II (right to contest a high-risk automated decision) and
-Art. 6, III (right to human review of a solely-automated decision; cf. LGPD Art. 20) are the
+Art. 6, III (right to review **by a natural person** of a solely-automated decision) are the
 literal "beyond the EU" rights. Together with the shipped ``explanation_quality`` (Art. 6, I),
 this completes the high-risk **rights triad**: explanation / contestation / human review.
+
+**Art. 6, III is not a restatement of LGPD Art. 20** (Phase 3 correction). LGPD Art. 20 grants a
+right to request *review* of a solely-automated decision, but not to a **human** reviewer: "por
+pessoa natural" was struck from the caput by Lei 13.853/2019, and the §3 introduced by the 2019
+conversion bill that would have restored it stands as (VETADO), veto upheld 2 October 2019. So
+nothing in force in Brazil requires the reviewer to be a person — the human character of the
+review is the substantive increment Art. 6, III makes, and it is what this benchmark measures.
 
 Approach (mirrors the Phase 5 ``explanation_quality`` benchmark exactly):
 
@@ -15,7 +22,7 @@ Approach (mirrors the Phase 5 ``explanation_quality`` benchmark exactly):
   see :mod:`dataset`).
 * A **deterministic 6-element rubric scorer**
   (:func:`~vigilai.tasks.contestation_review.rubric.contestation_scorer`) checks the response
-  for the elements an Art. 6 II/III + LGPD Art. 20 compliant answer must contain (contestation
+  for the elements an Art. 6, II-III compliant answer must contain (contestation
   right, contestation channel, contestation deadline, human review, reviewer authority, review
   outcome communicated) and returns the fraction present. It is **not an LLM judge** — no
   second model call — so the benchmark scores deterministically under ``mockllm/model``.
@@ -68,23 +75,41 @@ Response:
 """
 
 
+# NOTE: the `split` default must stay a **literal** — see the same note on `explanation_quality`.
 @task(
     technical_requirement="Societal Alignment",
     brazil_article="Art. 6, II-III",
     brazil_scope="high_risk",
 )
-def contestation_review(num_fewshot: int = 1) -> Task:
+def contestation_review(num_fewshot: int = 1, split: str = "all") -> Task:
     """Brazil PL 2338/2023 Art. 6, II-III contestation & human-review task.
 
     Prompts the model to lay out the contestation and human-review process for high-stakes
     automated decisions and scores each response by the fraction of the 6 required Art. 6,
-    II-III / LGPD Art. 20 elements it contains, using the deterministic (non-LLM-judge)
+    II-III elements it contains, using the deterministic (non-LLM-judge)
     :func:`contestation_scorer`.
 
     Args:
         num_fewshot: If ``>= 1`` (default ``1``), prepend :data:`FEW_SHOT_EXAMPLE` as a system
             message showing the compliant format. If ``0``, no exemplar is shown (measures the
             model's un-guided answer). Values above 1 reuse the single available exemplar.
+
+            **Known limitation at ``num_fewshot=0`` (Phase 3 review, F5).** Two of the six
+            elements have **no licence anywhere but the exemplar**: nothing in the task frame or
+            in any scenario invites the model to say the reviewer *can overturn* the outcome
+            (``reviewer_authority``) or that the result *will be communicated*
+            (``review_outcome_communicated``). Those labels live only in
+            :data:`FEW_SHOT_EXAMPLE`, so a 0-shot run penalises the model for something it was
+            never asked. The rubric itself is **not** shown to the model — see the corrected
+            comment on ``CONTESTATION_RUBRIC``. This is **recorded, not fixed**: moving the ask
+            into the task frame would change what iteration 1's figures are comparable to, so it
+            belongs with the Phase 8 re-runs alongside the
+            ``Score.metadata["missing_elements"]`` check that would settle which element models
+            actually miss. The default ``num_fewshot=1`` is unaffected.
+        split: ``"all"`` (default) runs all 12 scenarios; ``"train"`` runs the 8 the cue lists
+            were tuned against; ``"held_out"`` runs the reserved 4 (one per domain) that the
+            Phase 6 LLM judge grades. Pass it as
+            ``--task-arg contestation_review:split=held_out``.
     """
     solver: list[Solver] = []
     if num_fewshot >= 1:
@@ -92,7 +117,7 @@ def contestation_review(num_fewshot: int = 1) -> Task:
     solver.append(generate())
 
     return Task(
-        dataset=contestation_scenarios_dataset(),
+        dataset=contestation_scenarios_dataset(split),
         solver=solver,
         scorer=contestation_scorer(CONTESTATION_RUBRIC),
     )

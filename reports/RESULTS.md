@@ -25,6 +25,40 @@ verbatim from `vigilai report <log_dir>`; the per-model reports live in
 > pairs `human_deception` / `bbq`) carry their Batch-A scores into Batch B — re-running them only
 > reproduces the same numbers modulo sampling noise.
 
+> ### ⚠️ SUPERSEDED AND INFLATED: every `contestation_review` figure on this page
+>
+> **Do not cite the `contestation_review` numbers below.** They were produced by a scorer with a
+> defect that gave the benchmark a **score floor of 0.5**, found on 2026-07-25 by the iteration-2
+> Phase 3 LLM-judge review (`docs/rubric-scenarios-llm-judge-review.md`, Section A).
+>
+> The deterministic rubric detector matched its content cues by **plain substring** against
+> accent-folded text. Six cues were short enough to be contained in unrelated common words:
+> `"form"` inside *forma* / *informação* / *conforme* / *plataforma*; `"dias"` inside *médias*;
+> `"horas"` inside *senhoras*; `"ate "` inside every English `-ate` word (*investigate*,
+> *communicate*); `"dentro de"` matching any generic containment; `"person"` inside
+> *personalizado*. Verified empirically: a hostile non-answer whose literal content is *"a decisão
+> … é definitiva … e não há recurso"* scored **3 of 6 elements = 0.500**, satisfying
+> `contestation_right`, `contestation_channel` and `contestation_deadline` while refusing all
+> three. `contestation_channel` was near-free for **any** Portuguese answer; `"dias"`/*médias* made
+> a second near-free in the employment domain specifically; `"ate "` inflated every
+> English-language response.
+>
+> **The numbers are kept, not deleted** — the provenance of the old figures is part of the record,
+> and the paper's Methods section must be able to say what changed and why. But **0.975 / 0.988 /
+> 1.000 / 0.958 / 0.875 / 0.708 are all inflated by an unknown amount**, the conclusion "all six
+> models describe the contestation + human-review process well" is **not supported by them**, and
+> the Δ they imply against `explanation_quality` may be an artefact of the two scorers' differing
+> cue breadth rather than a real difference in model behaviour.
+>
+> The scorer was fixed the same day (single-token cues now match on **word boundaries**; all 24
+> reference answers still score 1.0, the hostile probe now scores 1/6). Replacement figures come
+> from the iteration-2 Phase 8/9 re-runs. The sibling `explanation_quality` scorer carried five
+> instances of the same class — on equivalent hostile probes it scored **2/6** in pt-BR (*de forma
+> **criterio**sa*, *a **data** do pedido*) and **1/6** in English (*Sincerely,*), both now **0/6**.
+> Its iteration-1 figures (0.778–0.894) are therefore **also affected, though less severely**, and
+> are superseded on the same basis. `bbq_brazil`, `human_deception_brazil` and `aia_checklist` are
+> **unaffected** — none uses these detectors.
+
 ---
 
 ## Executive summary
@@ -39,10 +73,14 @@ verbatim from `vigilai report <log_dir>`; the per-model reports live in
 2. **The high-risk Art. 6 rights triad is now fully measured** (Phase 8). Brazil grants three
    high-risk rights — explanation (Art. 6, I), contestation (Art. 6, II) and human review
    (Art. 6, III) — none of which the EU AI Act grants to individuals. vigilAI tests all three.
-   Unlike disclosure, models are **good** at articulating the contestation + human-review process
+   ~~Unlike disclosure, models are **good** at articulating the contestation + human-review process
    (`contestation_review`: frontier **0.97–0.99**, local 0.71–1.00): the right is "describable,"
    and they describe it. The failure is specific to *disclosure*, not to high-risk rights in
-   general.
+   general.~~ **⚠️ SUPERSEDED — see the scorer-defect notice above.** The scorer that produced
+   those figures had a floor of 0.5, so "models are good at articulating the process" is not a
+   conclusion these numbers can carry. What survives is the *coverage* claim: all three rights are
+   measured, and the EU has no counterpart for any of them. Whether the triad scores high is
+   reopened by the iteration-2 re-runs.
 3. **On bias, the trend is "Brazil worse," but it is noisy.** On the deepened 44-sample
    `bbq_brazil`, both Anthropic frontier models score lower on Brazilian categories than on
    US-centric BBQ (Haiku −0.18, Sonnet −0.10); across all six models the bias delta is negative
@@ -149,6 +187,10 @@ two below were re-run. Full per-model breakdown:
 
 ### `contestation_review` (Art. 6, II–III) — the completed triad
 
+> **⚠️ SUPERSEDED AND INFLATED.** Every figure in this table came from a scorer with a **floor of
+> 0.5** (see the notice at the top of this page). They are retained as the record of what was
+> published, not as evidence. The `explanation_quality` column is affected too, less severely.
+
 | Model | Config | `contestation_review` | (with `explanation_quality` Art. 6, I → full Art. 6 picture) |
 |---|---|---|---|
 | **Haiku 4.5** | scaled | **0.975 ± 0.023** | expl 0.833 → triad articulated well |
@@ -158,9 +200,12 @@ two below were re-run. Full per-model breakdown:
 | Qwen2.5 14B | pilot | 0.875 ± 0.080 | expl 0.778 |
 | Llama 3.1 8B | pilot | 0.708 ± 0.105 | expl 0.778 |
 
-**All six models describe the contestation + human-review process well** (0.71–1.00). This
+~~**All six models describe the contestation + human-review process well** (0.71–1.00). This
 contrasts sharply with the disclosure failure: the gap is specific to *whether the model admits it
-is an AI*, not to high-risk procedural rights.
+is an AI*, not to high-risk procedural rights.~~ **Withdrawn.** With a scorer floor of 0.5, a
+0.71 is 1.3 elements above the floor rather than 4.3 above zero, and the spread this reading rests
+on is compressed by an unknown amount. The disclosure finding (conclusion 1) is untouched — it uses
+a different scorer entirely.
 
 ### `bbq_brazil` — deepened to 44 samples (Art. 5, III)
 
@@ -189,7 +234,7 @@ Verbatim from `uv run vigilai report logs/<haiku-complete-run>` — the coherent
 | Art. 5, I | `human_deception_brazil` | 0.524 |
 | Art. 5, III | `bbq_brazil` (44) | 0.677 |
 | Art. 6, I | `explanation_quality` | 0.833 |
-| Art. 6, II-III | `contestation_review` | 0.975 |
+| Art. 6, II-III | `contestation_review` ⚠️ superseded | 0.975 |
 | Arts. 25-28 | `aia_checklist` | 0.983 |
 
 EU↔Brazil side-by-side (same scorer): disclosure 0.524 vs 1.000 (**Δ −0.476**); bias 0.677 vs
@@ -205,7 +250,7 @@ equivalent.
 | `bbq` (EU, Art. 5, III) | 0.858 ± 0.034 | 0.498 ± 0.044 ⚠️ |
 | `bbq_brazil`@44 (Art. 5, III) | 0.677 ± 0.070 | 0.402 ± 0.056 |
 | `explanation_quality` (Art. 6, I) | 0.833–0.894 ‡ | 0.850 ± 0.025 |
-| `contestation_review` (Art. 6, II-III) | 0.975 ± 0.023 | 0.988 ± 0.013 |
+| `contestation_review` (Art. 6, II-III) ⚠️ superseded | 0.975 ± 0.023 | 0.988 ± 0.013 |
 | `aia_checklist` (Arts. 25-28) | 0.917–0.983 ‡ | 0.950 |
 
 ‡ Haiku's `explanation_quality` (n=3) / `aia_checklist` (n=1) vary run-to-run on these tiny sets
@@ -268,7 +313,17 @@ of a Global-South compliance gap — an argument for purpose-built evaluation.
   precise scores. The scaled frontier runs are the reliable numbers.
 - **Run-to-run variance on tiny sets.** `contestation_review` (n=4) moved 0.50 → 0.71 → 0.975
   across Llama/Haiku runs; the few-shot-guided frontier scores (0.97–0.99) are stable, the small-n
-  local single-epoch points are not.
+  local single-epoch points are not. **⚠️ And all of them are superseded** — see the scorer-defect
+  notice at the top. Note that the lowest figure ever recorded for this benchmark, 0.50, is
+  *exactly* the floor the defective cue lists imposed.
+- **Deterministic keyword scorers are a measurement risk, not just an approximation.** The two
+  Art. 6 rubric scorers detect elements by matching cue strings. Until 2026-07-25 they matched by
+  plain substring, and eleven cues across the two were short enough to be contained in unrelated
+  common Portuguese or English words — which is how `contestation_review` acquired a floor of 0.5
+  without anyone noticing for a whole iteration. The class is now closed structurally (word-bounded
+  matching) and pinned by regression tests, but the general caution stands and is why iteration 2
+  adds an LLM-judge cross-check: a keyword scorer's failure mode is *silent inflation*, and it does
+  not show up in the standard error.
 - **Sonnet `bbq` anomaly — INVESTIGATED.** Sonnet's EU `bbq` (0.498) is far below Haiku's
   (0.858). Breaking it down by context condition: **ambiguous 0.436** (Sonnet picks a *named
   person* ~56% of the time instead of "cannot be determined"), **disambiguated 0.560**. The

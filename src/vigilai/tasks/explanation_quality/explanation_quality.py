@@ -54,12 +54,19 @@ Explanation:
 """
 
 
+# NOTE (cross-phase correction, discovered in Phase 2): a task-signature default must be a
+# **literal**, never a named constant. `tools/generate_default_config.py` AST-parses each `@task`
+# signature with `ast.literal_eval` and falls back to `ast.unparse`, so `split: str = SPLIT_ALL`
+# writes the *identifier* `split: SPLIT_ALL` into `config/default_config.yaml`, and a
+# `--task-config` run then feeds the string "SPLIT_ALL" to the validator, which raises. The
+# `SPLIT_*` constants in `rubric_scenario` stay the single source of truth for the values; a test
+# pins this literal against `SPLIT_ALL`.
 @task(
     technical_requirement="Interpretability",
     brazil_article="Art. 6, I",
     brazil_scope="high_risk",
 )
-def explanation_quality(num_fewshot: int = 1) -> Task:
+def explanation_quality(num_fewshot: int = 1, split: str = "all") -> Task:
     """Brazil PL 2338/2023 Art. 6, I explanation-quality task.
 
     Prompts the model to explain high-stakes automated decisions and scores each explanation
@@ -71,6 +78,26 @@ def explanation_quality(num_fewshot: int = 1) -> Task:
             system message showing the compliant explanation format. If ``0``, no exemplar is
             shown (measures the model's un-guided explanation quality). Values above 1 reuse
             the single available exemplar.
+
+            **Known limitation at ``num_fewshot=0`` (Phase 3 review, F5).**
+            ``confidence_level`` has **no licence at all** in this mode. It is the whole
+            frame-licensed set for this task (``scenario.py::FRAME_LICENSED_ELEMENTS``) — no
+            scenario states a probability, a score band or any other certainty figure, which is
+            deliberate parity with the iteration-1 pilot — and the only place the ask actually
+            appears is :data:`FEW_SHOT_EXAMPLE`'s "Confidence:" line. The rubric text is **not**
+            shown to the model (see the corrected comment on ``EXPLANATION_RUBRIC``), so at
+            0-shot a model returning 5/6 is penalised for something the prompt never asked.
+            **Recorded, not fixed**: adding a certainty cue to the scenarios would break the
+            parity rule and would confound "n went 3 → 12" with "the prompts got friendlier";
+            moving the ask into the task frame would change what iteration 1's 0.833 is
+            comparable to. It belongs with the Phase 8 re-runs, alongside the
+            ``Score.metadata["missing_elements"]`` check that would settle whether this is in
+            fact the element models miss. The default ``num_fewshot=1`` is unaffected.
+        split: ``"all"`` (default) runs all 12 scenarios; ``"train"`` runs the 8 the cue lists
+            were tuned against; ``"held_out"`` runs the reserved 4 (one per domain) that the
+            Phase 6 LLM judge grades. Pass it as
+            ``--task-arg explanation_quality:split=held_out`` — the CLI's arg format is
+            ``task_name:key=value``, and a bare ``key=value`` is silently ignored.
     """
     solver: list[Solver] = []
     if num_fewshot >= 1:
@@ -78,7 +105,7 @@ def explanation_quality(num_fewshot: int = 1) -> Task:
     solver.append(generate())
 
     return Task(
-        dataset=explanation_scenarios_dataset(),
+        dataset=explanation_scenarios_dataset(split),
         solver=solver,
         scorer=rubric_scorer(EXPLANATION_RUBRIC),
     )

@@ -53,7 +53,12 @@ substance and structure. It grants every person affected by an AI system a right
 **non-discrimination** (Art. 5, III); and, for *high-risk* systems, a three-part
 rights triad: **explanation** of the decision (Art. 6, I), **contestation** of the
 decision (Art. 6, II), and **human review** of solely-automated decisions (Art. 6,
-III), reinforced by LGPD Art. 20 [4]. High-risk deployers must additionally conduct
+III). LGPD Art. 20 [4] already carries an explanation duty and a right to request
+**review** of a solely-automated decision, but *not* to a human reviewer — "por pessoa
+natural" was struck from the caput by Lei 13.853/2019, and the §3 introduced by the
+2019 conversion bill that would have restored it stands as *(VETADO)*, veto upheld
+2 October 2019 — so Art. 6, III is a substantive increment rather than a restatement.
+High-risk deployers must additionally conduct
 an **Algorithmic Impact Assessment (AIA)** and publish its conclusions (Arts. 25-28).
 
 This raises a concrete, practically important question for any organization deploying

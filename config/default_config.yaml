@@ -43,9 +43,11 @@ cab:
 
 contestation_review:
   num_fewshot: 1
+  split: all
 
 explanation_quality:
   num_fewshot: 1
+  split: all
 
 fairllm:
   sample_size: 200
