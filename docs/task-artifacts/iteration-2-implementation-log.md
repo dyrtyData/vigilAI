@@ -5091,3 +5091,283 @@ already named:
       identical latent defect. Deliberately out of scope here — none is in the iteration-2 matrix, and
       widening would change tasks no published number depends on. It is a one-line change per task
       plus the empty-`Score.answer` census.
+
+---
+
+### §8.13 The SIXTH defect, fixed: the EU `bbq` baseline is no longer one axis (2026-07-26)
+
+**Brief.** Fix defect 6 (§8.12.6) and re-measure the EU↔Brazil delta. Approved spend, ceiling
+**$2.50** of the ~$5.6 remaining. Design decision handed down by the human and implemented as
+specified: sample the EU side on **matched axes**, not all eleven.
+
+**Total spend: $1.2957** ($0.0117 pre-flight + $1.2840 matrix — Haiku $0.2963, Sonnet $0.9877).
+Measured from `log.stats.model_usage` against Haiku 4.5 at $1/$5 per MTok and Sonnet 4.6 at $3/$15 —
+not estimated. **8% under the $1.40 projection**, because Sonnet's mean output length on the matched
+subsets fell as the run went on (20,032 output tokens against 28,680 extrapolated from a 16-sample
+pre-flight); the input side matched the projection exactly (229,080 tokens, 1,884 × 121.6).
+
+#### 8.13.1 The spend estimate, confirmed before launch rather than after
+
+The brief supplied per-sample costs of $0.00015 (Haiku) / $0.00073 (Sonnet) and asked for an
+independent confirmation. Two were done.
+
+1. **From the committed Phase 8 logs** (the same task at `--limit 100 --epochs 10`): Haiku 124,960
+   input + 7,000 output = $0.1600 for 1,000 generations = **$0.000160/gen**; Sonnet 124,960 + 13,885
+   = $0.5832 = **$0.000583/gen**. Sonnet's is ~20% *below* the brief's figure.
+2. **A live 16-sample pre-flight on the matched subsets themselves**, because the four matched axes
+   have different context lengths from `Age` and an extrapolation from `Age` would not have caught
+   that: Haiku **$0.000153/gen**, Sonnet **$0.000577/gen** → **$1.4017** projected for
+   192 × 10 × 2 models. Cost of the pre-flight: **$0.0117**.
+
+Projected $1.40 against a $2.50 ceiling, so no reduction in samples per axis was needed. **Actual
+$1.2957** — the projection was conservative on the output side, which is the direction to be wrong
+in. Neither model needed a retry and neither run was truncated.
+
+#### 8.13.2 Deviation from the brief: 48 rows per axis, not 50
+
+**The brief specified 50 × 4 = 200 samples. Shipped: 48 × 4 = 192.** Reason, measured before
+deciding: BBQ emits each scenario as **four consecutive rows** — `(ambig, neg)`, `(disambig, neg)`,
+`(ambig, nonneg)`, `(disambig, nonneg)` — so a per-axis count that is not a multiple of 4 cuts a
+scenario in half.
+
+| per-axis | total | (context × polarity) cells |
+|---|---|---|
+| 50 | 200 | ambig/neg **52**, ambig/nonneg 48, disambig/neg **52**, disambig/nonneg 48 |
+| **48** | **192** | **48 / 48 / 48 / 48** |
+
+`bbq_brazil` is exactly 100 samples in each of its four cells. Since the entire purpose of matching
+the axes is to make the two sides comparable, an off-multiple EU cut would have re-introduced a
+composition difference on the very comparison being repaired — and it is the same multiple-of-4 rule
+the outline already binds Phase 9 to for `bbq_brazil`. 192 is also marginally cheaper. Recorded as a
+deviation; the design is a single constant (`MATCHED_PER_AXIS`) and the tests pin the multiple-of-4
+property rather than the number.
+
+#### 8.13.3 The seam, and why the defaults could not move
+
+The outline constraint was explicit: *do not change what `bbq` means for anyone else*. Two additive
+kwargs on the existing task, both with **literal** defaults (the Phase 2 trap, third instance):
+
+```python
+def bbq(subsets=None, shuffle=False, axes: str = "upstream", per_axis_limit: int = 0) -> Task
+```
+
+`axes="upstream", per_axis_limit=0` returns **upstream's dataset object untouched** — verified by a
+test asserting the ids equal upstream's, and by a second test pinning that the default prefix is
+**still `Age`-only**. That second test is not a regression to fix; it is the record of what iterations
+1 and 2 measured, so both halves of the correction stay runnable from one checkout.
+
+An **additive kwarg rather than a new task**, following the `aia_checklist` `prompt_mode` precedent
+(Resolution 9), because a new task name would have needed a second `EU_BRAZIL_PAIRS` entry, a second
+`technical_requirement` mapping and a second `brazil_article` decorator — three places for the report
+to disagree with itself, against one place (`task_args` in the log header) to check the condition.
+
+Files: `src/vigilai/tasks/bbq/stratify.py` (new, leaf module — no `@task`, per the Phase 4 dataclass
+correction), `src/vigilai/tasks/bbq/bbq.py`, `tools/bbq_axis_census.py` (new),
+`tests/test_bbq_axes.py` (new, **63 tests**), `config/default_config.yaml` (+2 additive entries,
+`axes: upstream` / `per_axis_limit: 0`).
+
+**The scorer is untouched and is still the shared wrapper.** `task_with` replaces the dataset *and*
+the scorer; `choice_sigil_tolerant` reaches the stratified path too, pinned by a test, and the
+existing AST sweep that fails on a bare `choice()` call still passes.
+
+#### 8.13.4 Determinism: pinned by id, not by seed
+
+No RNG. The sample set is `f"{axis}_{i:05d}"` for `i in range(48)` over the four axes, **selected by
+id** and interleaved round-robin. Three consequences, each tested:
+
+- **Reordering upstream cannot change it.** A test reverses the whole upstream dataset and gets the
+  identical 192 ids in the identical order.
+- **A moved dataset fails loudly.** A missing pinned id raises, naming `BBQ_DATASET_REVISION`. The
+  guard runs at *task construction*, so a drifted dataset makes the eval unloadable rather than
+  silently sampling something else — which is exactly how the age-only baseline happened.
+- **Any `--limit` stays balanced.** Multiple of 4 → axes balanced; multiple of 16 → cells balanced
+  too. Verified for 4, 8, 16, 40, 100, 192.
+
+Verified against the real dataset before pinning: all four matched subsets number from
+`example_id` 0 contiguously (`Race_ethnicity` 6,880 rows, `Religion` 1,200, `SES` 6,864,
+`Nationality` 3,080), and the four-row scenario block shares one identity pair —
+`Religion_00000`–`Religion_00003` all carry `answer_info == ['Jewish','Jewish'] / ["Can't
+answer",'unknown']`.
+
+#### 8.13.5 The runs
+
+```bash
+# 1. Copy each rescored dir and drop its superseded age-only bbq log, so the report reads one bbq
+#    log and its choice never has to be assumed (Resolution 12(b)).
+#    -> removed 2026-07-26T17-43-31_bbq (task_args {subsets: None, shuffle: False}, 1000 samples)
+# 2. The matched-axis run, into the same dir.
+for M in anthropic/claude-haiku-4-5 anthropic/claude-sonnet-4-6; do
+  uv run vigilai eval "$M" --tasks bbq --task-arg bbq:axes=matched \
+    --limit 192 --epochs 10 --temperature 1.0 --seed 42 \
+    --log-dir "logs/iter2-matched-axes-$(basename "$M")"
+done
+```
+
+`logs/iter2-matched-axes-<model>` = a `copytree` of `logs/iter2-rescored-<model>` (the established
+pattern — `tools/rescore_bbq.py` does the same) minus the age-only `bbq` log, plus the new one. The
+pre-fix dirs are untouched, so the before/after is reproducible at $0 and Resolution 13(h)(iii)'s
+"reporting reads the `-rescored-` dirs" becomes "reads the `-matched-axes-` dirs" for `bbq` only.
+
+Both runs `status: success`, 1,920 rows each (192 × 10), wall clock 2:57 (Haiku) / 7:13 (Sonnet).
+**Header verified rather than assumed:** exactly one `bbq` log per dir, `task_args` =
+`{'subsets': None, 'shuffle': False, 'axes': 'matched', 'per_axis_limit': 0}`, `limit: 192`,
+`epochs: 10`.
+
+#### 8.13.6 The axis breakdown, read off the log
+
+The point of the exercise, so it is asserted rather than assumed. Identical for both models:
+
+```
+axes  : Nationality 48, Race_ethnicity 48, Religion 48, SES 48
+cells : ambig/neg 48, ambig/nonneg 48, disambig/neg 48, disambig/nonneg 48
+samples 192   scenarios 48   empty Score.answer 0
+```
+
+Both runs drew **the same 192 ids**, which the census asserts and reports — that is the determinism
+claim, measured. Committed at `docs/bbq-matched-axes-census.md` (generated, drift-guarded), with the
+full id list, so `tests/test_bbq_axes.py::TestCommittedCensusArtifact` can check *what actually ran*
+against `expected_sample_ids()` **offline**, the `.eval` logs being gitignored. Verified RED: changing
+`MATCHED_PER_AXIS` 48 → 50 without regenerating the artifact fails **8** tests, the id-list assertion
+among them.
+
+**Empty-`Score.answer` census: 0 in all four logs** (1,920 + 4,000 rows per model). The Resolution
+13(h)(v) doctrine pre-flight, and now a hard failure in the tool rather than a habit.
+
+#### 8.13.7 The measurement, old against new
+
+Both sides clustered on the scenario, then propagated. **The Brazil-side clustered bars reproduce the
+committed §8.12.5 figures exactly** (Haiku 0.0181, Sonnet 0.0149), which is the cross-check that the
+method here is the same one:
+
+| Model | Brazil | EU `Age`-only (old) | **EU matched (new)** | Δ old | **Δ new** | Δ÷se old → new | verdict |
+|---|---|---|---|---|---|---|---|
+| Haiku 4.5 | 0.9010 ± 0.0181 | 0.8570 ± 0.0341 | **0.6833 ± 0.0240** | +0.0440 ± 0.0386 | **+0.2177 ± 0.0300** | 1.1 → **7.3** | ns → **distinguishable** |
+| Sonnet 4.6 | 0.9372 ± 0.0149 | 0.8350 ± 0.0354 | **0.9323 ± 0.0210** | +0.1023 ± 0.0384 | **+0.0050 ± 0.0257** | 2.7 → **0.2** | nominally sig → **ns** |
+
+**What the defect was worth: it inverted which model appeared to have a gap.** Haiku's EU score fell
+0.857 → 0.683 and Sonnet's rose 0.835 → 0.932, moving the two deltas in **opposite directions**. A
+defect that behaves model-dependently is the worst kind, because it reads as a difference between
+models — the same shape as the `ANSWER: $B` parse defect two sections earlier.
+
+**One honest oddity, reported rather than smoothed.** Haiku's EU cluster-robust bar (0.0240) is
+*narrower* than its nominal one (0.0327) — design effect **0.54**, i.e. negatively correlated
+within-scenario scores. Cluster-robust is not automatically the wider bar. So for Haiku the
+conservative reading uses the **nominal** propagated bar (0.0358), on which the delta is still 6.1 se
+from zero. No verdict changes either way, and the tool prints both.
+
+Per-axis, which is where the interpretation lives:
+
+| Model | EU Race_eth | EU Religion | EU SES | EU Nationality | BR Race | BR Religion | BR Class | BR Region | BR Intersec. |
+|---|---|---|---|---|---|---|---|---|---|
+| Haiku 4.5 | 0.640 | 0.708 | **0.500** | 0.885 | 0.865 | 0.960 | **0.865** | 0.935 | 0.880 |
+| Sonnet 4.6 | 0.996 | 0.904 | 0.829 | 1.000 | 0.945 | 0.964 | 0.904 | 0.978 | 0.896 |
+
+#### 8.13.8 The framing, and the overclaim that was available and refused
+
+Haiku's +0.218 at 7.3 se is the most quotable number this iteration produced, and it points **away**
+from the paper's hypothesis. Three claims are made, and they are kept separate on purpose:
+
+1. **The hypothesis is not supported.** Neither model scores lower on the Brazilian set. This is now
+   a measurement on comparable prejudice families, not an absence of one — an improvement on §8.12.6,
+   which could only say the question was unanswerable.
+2. **The reversal is not a fairness result.** Haiku: **0.500** on EU `SES`, **0.865** on Brazilian
+   Class; 0.640 on EU `Race_ethnicity`, 0.865 on Brazilian Race. A 36-point gap on the *same
+   prejudice family* is a property of two instruments. And the most economical explanation is on the
+   record in this repo: Phase 2's generator **lints every `bbq_brazil` disambiguating sentence to
+   name the gold answer verbatim in the answer-choice wording**. A benchmark built to be unambiguous
+   is easier than BBQ's naturalistic items, by construction and by our own design choice.
+3. **Matched axes remove one confound, not both.** Prejudice family is held constant; language,
+   jurisdiction and item construction still move together and this design cannot separate them.
+
+So every artifact says: **a same-scorer, matched-axis delta is a difference between two benchmarks.
+It is the first version of this comparison that is even coherent, and it is still not a bias
+finding.** The control that would make it one is a **translated** set (the same Brazilian scenarios
+in English, and/or BBQ items rewritten to `bbq_brazil`'s construction rules), so language and
+construction move one at a time — added to future work in both the results page and the paper. Not a
+larger sample: n was never the problem.
+
+Also stated everywhere, per the brief: **`Nationality` ↔ Region is the closest available analogue
+only** (Brazil's regional prejudice is internal, BBQ's `Nationality` is xenophobia), and
+`bbq_brazil`'s Intersectional axis has **no** counterpart — `Race_x_SES` was excluded deliberately
+because it would double-count the race and SES rows already sampled.
+
+#### 8.13.9 A bug found in this pass, by the assertion that was supposed to be redundant
+
+The first `scenario_key` for `bbq_brazil` took the first two underscore-components of the sample id
+(`Class_004_ambig_neg` → `Class_004`). One category key contains an underscore of its own:
+**`Race_IBGE_000_ambig_neg` → `Race_IBGE`**, collapsing all twenty Race scenarios into a single
+80-member cluster. Effect: 81 clusters instead of 100, and Haiku's `bbq_brazil` cluster-robust bar
+reported as **0.0174** instead of **0.0181**.
+
+Nothing else showed it. It was caught by the **equal-cluster-size assertion** — every cluster must
+hold exactly 4 samples — which was written as a belt-and-braces check and turned out to be the only
+thing standing between a wrong error bar and publication. It is now non-optional (an
+`--allow-partial-scenarios` opt-out exists for deliberately truncated runs and is never used for a
+published number), and the fix (drop the last two components instead of keeping the first two) is
+pinned by a test naming `Race_IBGE` explicitly.
+
+Worth recording as the pattern, because it is the sixth instance of it in this iteration: **the
+defect was in the code that measures the uncertainty, not in the measurement**, and it was silent.
+
+#### 8.13.10 Verification
+
+| Check | Result |
+|---|---|
+| `uv run pytest` | **942 passed** (was 879; +63 in `tests/test_bbq_axes.py`), no API key, no network |
+| `uv run pytest tests/test_bbq_axes.py` | **63 passed** |
+| RED check | `MATCHED_PER_AXIS` 48 → 50 without regenerating the artifact → **8 failures**, incl. the committed-id-list assertion |
+| `uv run mypy` on changed paths | `Success: no issues found in 4 source files` (`tasks/bbq/stratify.py`, `tasks/bbq/bbq.py`, `report/brazil_report.py`); `MYPYPATH=src uv run mypy tools/bbq_axis_census.py` → `Success: no issues found in 1 source file` |
+| `uvx typos` | **9 errors — the unchanged pre-existing vendored `cab/*.json` baseline.** Two new ones were introduced and *fixed by rewording*, not allowlisted: `typos` splits a hyphenated negating prefix from its stem and then flags the three-letter fragment as a misspelling of *miss*/*mist*, so both sites were rewritten as the unhyphenated `misstates` |
+| `uv run make default-config` | **+2 lines, both additive**: `axes: upstream`, `per_axis_limit: 0` |
+| `bash report/build_report.sh` | exit 0, **0** `Missing character`, **0** warnings of any kind, 28 → **30 pages** (body 24 + 6-page dossier) |
+| Independent recomputation | accuracy and nominal se hand-reduced from per-row scores for all four logs and compared to Inspect's own header figures — identical, and the census prints **MISMATCH** in the table if they ever are not |
+| Cross-check against a committed number | the Brazil-side cluster-robust bars reproduce §8.12.5's 0.0181 / 0.0149 exactly |
+
+#### 8.13.11 Artifacts regenerated
+
+- **`reports/runs/iter2/*.md`** — all **8** regenerated. The two `<model>.md` files now carry the
+  matched-axis EU row (Haiku Δ +0.218 ± 0.036, Sonnet +0.005 ± 0.021 — the report prints the
+  *nominal* bar it reads from the log; the clustered one is in the census). The six judge /
+  aia-guided files changed by **one line each**: the side-by-side note (below).
+- **`src/vigilai/report/brazil_report.py`** — the side-by-side note said the same-scorer delta
+  *"isolates the Brazil-specific content"* in **both** the Markdown and the HTML renderer. Rewritten
+  in the quoted-and-withdrawn form: same scorer is **necessary and not sufficient**, read the EU log's
+  `task_args` before citing a Δ, and treat every Δ as a difference between two *benchmarks*.
+- **`docs/bbq-matched-axes-census.md`** — new, generated, drift-guarded.
+- **`reports/RESULTS.md`** — a top-level ⛔ notice with the defect, the fix, the old-vs-new table and
+  the refused overclaim; executive-summary item 3 and the methodological headline rewritten to four
+  values / three signs; the **Design** paragraph corrected (it still asserted the delta isolates
+  Brazil-specific content); the age-only EU and Δ columns of the iteration-2 table struck and a new
+  matched-axis section added with the per-axis table; conclusion 3 gains a **(c)**; conclusion 4
+  rewritten around three compounding baseline defects; the age-only caveat replaced by the fixed
+  version plus the one-line-census caveat; future work's top item marked done for the frontier models
+  and a **construction-matched control** added; the run commands added to Reproducibility.
+- **`report/vigilai-brazil-pl2338-compliance.md`** — the third correction to the paper's central
+  comparison, so §4.2 was restructured rather than appended to: (a) parse, (b) baseline defect,
+  **(c) the matched-axis re-measurement** with **Table 1c**, then one *"What we say plainly"* holding
+  the three separate claims, then *"How much the defect was worth"*. Table 1b's EU and Δ columns are
+  struck in place. The §3 defect table goes **five → six** rows and the three recurring properties are
+  rewritten around it; the abstract, §3(d), §4.3's row notes, the methodological-finding paragraph,
+  the Discussion opening, two Limitations bullets, the attribution-assumption bullet, Future Work,
+  the Conclusion and Appendix A all updated. Result and Discussion now say **one** thing.
+- **`README.md`** — the Art. 5, III delta row updated (no longer struck: it has a replacement now);
+  the retraction note rewritten; a new `bbq` axes section with the kwarg table, the run commands, the
+  four tested properties and the explicit statement of what the fix does *not* buy; the `± se`
+  section's construct-validity sentence extended with the census as the check.
+- **Not regenerated:** `reports/multimodel-scorecard.html` / `scorecard.html`, still built from
+  iteration-1 log dirs (Phase 11's job; its `MODELS` list must now point at
+  `logs/iter2-matched-axes-<model>` for `bbq`, `logs/iter2-rescored-<model>` for everything else).
+
+#### 8.13.12 What is left for a human
+
+- [ ] **Confirm the 48-vs-50 deviation** (§8.13.2). It is the only departure from the brief.
+- [ ] **Decide whether Haiku's +0.218 belongs in the abstract.** It is currently there, framed as
+      "the predicted gap is absent, and the reversal is a benchmark difference not a fairness
+      finding". The alternative is to report only the absence. The number is real; the framing is the
+      judgment call, and it is the one place a reader could still be misled.
+- [ ] **Phase 9: re-run the matched-axis baseline for the four open-weight models** — $0 on Ollama,
+      `--task-arg bbq:axes=matched --limit 192`, and run the empty-`Score.answer` census on every BBQ
+      log at the same time. Their deltas stay retracted until then.
+- [ ] **Consider the translated control** (§8.13.8). It is the only design that would turn this delta
+      into a bias finding, and it needs no new API spend for the English side if `bbq_brazil`
+      scenarios are translated in-repo.

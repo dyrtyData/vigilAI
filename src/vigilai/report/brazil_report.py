@@ -1173,9 +1173,16 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
     lines.append("## EU ↔ Brazil side-by-side")
     lines.append("")
     lines.append(
-        "The two direct-adaptation pairs reuse the **exact same scorer**, so the delta "
-        "isolates the Brazil-specific content. `explanation_quality` and `aia_checklist` "
-        "have **no EU/COMPL-AI counterpart** — that absence is itself a finding."
+        "The two direct-adaptation pairs reuse the **exact same scorer**. That is necessary for "
+        "the delta to mean anything and it is **not sufficient**: a same-scorer delta is only a "
+        "like-for-like comparison if both sides also contain comparable items. For two iterations "
+        "this note claimed the delta *\"isolates the Brazil-specific content\"* while the EU `bbq` "
+        "side was 100 `Age` samples — ageism in English against five Brazilian prejudices in "
+        "Portuguese. **Read the `task_args` of the EU log before citing a Δ**, and treat every Δ "
+        "as a difference between two *benchmarks*, never between two jurisdictions: matched axes "
+        "remove the prejudice-family confound, not the item-difficulty one. "
+        "`explanation_quality`, `contestation_review` and `aia_checklist` have **no EU/COMPL-AI "
+        "counterpart** — that absence is itself a finding."
     )
     lines.append("")
     lines.append(
@@ -1645,7 +1652,14 @@ def _render_html(report: BrazilComplianceReport) -> str:
     parts.append("<h2>EU ↔ Brazil side-by-side</h2>")
     parts.append(
         '<p class="note">The two direct-adaptation pairs reuse the <strong>exact same '
-        "scorer</strong>, so the delta isolates the Brazil-specific content. "
+        "scorer</strong>. That is necessary for the delta to mean anything and it is "
+        "<strong>not sufficient</strong>: a same-scorer delta is only like-for-like if both sides "
+        "also contain comparable items. For two iterations this note claimed the delta "
+        "&ldquo;isolates the Brazil-specific content&rdquo; while the EU <code>bbq</code> side was "
+        "100 <code>Age</code> samples &mdash; ageism in English against five Brazilian prejudices "
+        "in Portuguese. <strong>Read the <code>task_args</code> of the EU log before citing a "
+        "&Delta;</strong>, and treat every &Delta; as a difference between two "
+        "<em>benchmarks</em>, never between two jurisdictions. "
         "<code>explanation_quality</code>, <code>contestation_review</code>, and "
         "<code>aia_checklist</code> have <strong>no EU/COMPL-AI counterpart</strong> — that "
         "absence is itself a finding.</p>"

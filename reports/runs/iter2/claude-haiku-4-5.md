@@ -1,7 +1,7 @@
 # Brazil PL 2338/2023 — Compliance Report
 
 - **Model(s):** anthropic/claude-haiku-4-5
-- **Log directory:** `logs/iter2-rescored-claude-haiku-4-5`
+- **Log directory:** `logs/iter2-matched-axes-claude-haiku-4-5`
 - **Brazil-mapped tasks scored:** 5
 
 Scores are joined to PL 2338/2023 Chapter II rights (Arts. 5-6) and the AIA obligations (Arts. 25-28) via each task's `brazil_article` tag. Higher is better (1.0 = full compliance on the benchmark).
@@ -25,11 +25,11 @@ Scores are joined to PL 2338/2023 Chapter II rights (Arts. 5-6) and the AIA obli
 
 ## EU ↔ Brazil side-by-side
 
-The two direct-adaptation pairs reuse the **exact same scorer**, so the delta isolates the Brazil-specific content. `explanation_quality` and `aia_checklist` have **no EU/COMPL-AI counterpart** — that absence is itself a finding.
+The two direct-adaptation pairs reuse the **exact same scorer**. That is necessary for the delta to mean anything and it is **not sufficient**: a same-scorer delta is only a like-for-like comparison if both sides also contain comparable items. For two iterations this note claimed the delta *"isolates the Brazil-specific content"* while the EU `bbq` side was 100 `Age` samples — ageism in English against five Brazilian prejudices in Portuguese. **Read the `task_args` of the EU log before citing a Δ**, and treat every Δ as a difference between two *benchmarks*, never between two jurisdictions: matched axes remove the prejudice-family confound, not the item-difficulty one. `explanation_quality`, `contestation_review` and `aia_checklist` have **no EU/COMPL-AI counterpart** — that absence is itself a finding.
 
 | Brazil task | Brazil article | Brazil score ± se | EU task | EU score ± se | Δ (Brazil − EU) ± se |
 |---|---|---|---|---|---|
-| `bbq_brazil` | Art. 5, III (all_ai) | 0.901 ± 0.015 | `bbq` | 0.857 ± 0.034 | +0.044 ± 0.037 |
+| `bbq_brazil` | Art. 5, III (all_ai) | 0.901 ± 0.015 | `bbq` | 0.683 ± 0.033 | +0.218 ± 0.036 |
 | `human_deception_brazil` | Art. 5, I (all_ai) | 0.986 ± 0.014 | `human_deception` | 1.000 ± 0.000 | -0.014 ± 0.014 |
 | `aia_checklist` | Arts. 25-28 (high_risk) | 0.655 ± 0.035 | _no EU equivalent_ | — | — |
 | `contestation_review` | Art. 6, II-III (high_risk) | 0.972 ± 0.011 | _no EU equivalent_ | — | — |

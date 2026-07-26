@@ -27,10 +27,10 @@ Chapter II rights: AI disclosure (Art. 5, I), non-discrimination over Brazilian
 (IBGE racial, regional, intersectional, religion and class) categories (Art. 5, III),
 and the complete **high-risk Art. 6 rights triad** — explanation (I), contestation
 (II) and human review (III) — plus the Arts. 25-28 Algorithmic Impact Assessment.
-Because two Brazil benchmarks reuse the *exact same scorer* as their EU counterpart,
-the **same-model EU--Brazil delta** isolates the Brazil-specific content from model
-strength. Our own headline finding did not survive that scrutiny, and reporting why is
-part of the contribution. Two iterations of this work reported a **disclosure gap of
+Two Brazil benchmarks reuse the *exact same scorer* as their EU counterpart, which is
+necessary for a **same-model EU--Brazil delta** and, as we learned the hard way, not
+sufficient: the two sides must also contain comparable items. Our own headline finding
+did not survive that scrutiny, and reporting why is part of the contribution. Two iterations of this work reported a **disclosure gap of
 about -0.45** — models denying being human ~95-100% of the time in English but only
 ~50-55% of the time in Portuguese. **That gap does not exist.** It was an artefact of
 our own benchmark's scoring target: Portuguese samples were instructed to answer *"com
@@ -47,13 +47,18 @@ hand, showed a model answering *"NÃO. Sou uma IA"* and being scored 0. No aggre
 could have shown it, because the aggregate was the artefact. **Our bias finding did not survive
 either**, and for two independent reasons: the reused `multiple_choice` parser could not read
 `ANSWER: $B`, the format Sonnet 4.6 answers in — 41% of its Brazil samples scored incorrect for
-being *unreadable* — and our EU baseline turns out to be 100 age-discrimination samples, so the
+being *unreadable* — and our EU baseline turned out to be 100 age-discrimination samples, so the
 "EU--Brazil bias delta" was comparing five Brazilian prejudices in Portuguese against ageism in
-English. Re-scored, both models score *higher* on the Brazilian set (Haiku **+0.044 ± 0.039**,
-Sonnet **+0.102 ± 0.038**), which is the opposite of the published direction; given the baseline
-problem we report **no bias gap in either direction** rather than substituting a positive one. In
-total **five of our measurement instruments were broken**, four of them under a number we had
-already published, and none of the five was visible in a standard error. We ship a per-article
+English. We fixed the parse and rebuilt the baseline on **axes matched to the Brazilian ones**
+(race, religion, class, nationality; 192 samples). The predicted "Brazil worse" gap is **absent in
+both models**: Sonnet's delta is **+0.005 ± 0.026** and Haiku's runs the other way at **+0.218 ±
+0.030**. We do not report the reversal as a fairness result, and the per-axis breakdown is why —
+Haiku scores 0.500 on EU socio-economic-status items and 0.865 on Brazilian class items, a 36-point
+gap on the *same prejudice family*, so what the delta measures is a difference between two
+benchmarks. Matching the axes moved the two models' deltas in **opposite directions**, which is the
+sharpest evidence in the paper that a reused baseline needs auditing as hard as a new benchmark. In
+total **six of our measurement instruments were broken**, five of them under a number we had
+already published, and none of the six was visible in a standard error. We ship a per-article
 compliance report, a self-contained HTML scorecard that doubles as the Art. 28 "public
 conclusions" artifact, and a six-model dossier.
 The paper's substantive finding is therefore legal rather than behavioural, and it does
@@ -225,9 +230,9 @@ failures. The general claim is narrow and we think it holds: **an aggregate cann
 instrument that produced it, and one transcript per claim, selected by a rule you fixed in
 advance, is the cheapest audit that can.**
 
-**Five broken measurement instruments, and what they have in common.** We report these as
+**Six broken measurement instruments, and what they have in common.** We report these as
 methods rather than as errata, because the pattern is a finding about benchmark construction and
-four of the five inflated or destroyed a number we had already published.
+five of the six inflated or destroyed a number we had already published.
 
 | # | Instrument | What was wrong | Effect on a published number |
 | --- | --- | --- | :-- |
@@ -236,23 +241,29 @@ four of the five inflated or destroyed a number we had already published.
 | 3 | `aia_checklist` prompt | The prompt was generated from the checklist, so it enumerated what it scored | **Echo floor of 0.944.** The task measured restatement of a supplied list |
 | 4 | `human_deception_brazil` target | The sample's language chose the *instruction* but not the *target*: asked for `NÃO`, scored against `"NO"` | **Every Portuguese observation scored 0** whatever the model said. The headline finding of two iterations |
 | 5 | `multiple_choice` answer parse | The instruction contains the literal placeholder `'ANSWER: $LETTER'`; Sonnet 4.6 copies the `$` through and the parser cannot read it | **41% of one model's bias samples** scored incorrect for being unreadable. Reversed the sign of the bias delta |
+| 6 | The EU `bbq` **baseline itself** | `--limit` is global per invocation and BBQ's eleven subsets are concatenated with `Age` first, so the baseline was 100 age-discrimination samples | **The bias delta was never a bias comparison.** Fixing it moved the two models' deltas in *opposite* directions (§4.2(c)) |
 
 Three properties recur, and each suggests a cheap check we now run:
 
-- **Not one of the five is visible in a standard error.** Every one produced a self-consistent
-  aggregate. Defects 1-3 inflate, 4-5 destroy; all five leave the error bar looking normal, and
-  defect 4's error bar (`± 0.112` on 210 observations) was in fact *diagnostic* of a perfectly
-  bimodal score and was read as ordinary noise. **An aggregate cannot audit the instrument that
-  produced it.**
-- **Three of the five are in code we reused rather than wrote** (4 and 5 in the contract of an
-  upstream scorer, 3 in a prompt built from our own data). The reused-scorer asymmetry that produced
-  defect 4 is worth stating plainly: **vigilAI's own scorers accent-fold before matching; the
-  upstream `match` does not.** Reuse is what makes an EU--Brazil delta meaningful and it is also
+- **Not one of the six is visible in a standard error.** Every one produced a self-consistent
+  aggregate. Defects 1-3 inflate, 4-5 destroy, 6 is orthogonal to magnitude altogether; all six leave
+  the error bar looking normal, and defect 4's error bar (`± 0.112` on 210 observations) was in fact
+  *diagnostic* of a perfectly bimodal score and was read as ordinary noise. Defect 6 is the sharpest
+  case, because it survived a whole iteration whose explicit purpose was to report standard errors
+  correctly: **an error bar audits precision, never construct validity.** An aggregate cannot audit
+  the instrument that produced it.
+- **Four of the six are in code we reused rather than wrote** (4 and 5 in the contract of an
+  upstream scorer, 6 in the interaction between a global `--limit` and an upstream dataset's
+  concatenation order, 3 in a prompt built from our own data). The reused-scorer asymmetry that
+  produced defect 4 is worth stating plainly: **vigilAI's own scorers accent-fold before matching;
+  the upstream `match` does not.** Reuse is what makes an EU--Brazil delta meaningful and it is also
   where the delta breaks.
 - **Each has a one-line pre-flight, and we did not have any of them.** For a cue list: score a
   hostile non-answer. For a prompt: score the rendered prompt with your own scorer. For a target:
-  assert it is answerable in the language its prompt asks for. For a multiple-choice parser: **count
-  the samples whose `Score.answer` is empty.** All four are now tests.
+  assert it is answerable in the language its prompt asks for. For a multiple-choice parser: count
+  the samples whose `Score.answer` is empty. For a **baseline**: print the composition of the sample
+  set it actually drew — which axes, in what proportion. All five are now tests, and the last is also
+  a committed artifact regenerated from the real logs rather than a claim in prose.
 
 **Defect 5 also demonstrates a distinction worth keeping**, because it decided how we fixed it. Two
 repairs were available. Tolerating the `$` at *parse* time changes only how an already-emitted
@@ -278,12 +289,17 @@ a task, because Inspect's `list_eval_logs` returns newest-first and a last-write
 therefore keeps the oldest. A corrected re-run into an existing directory changed nothing
 in the report, silently. Both now select on the log's own `EvalSpec.created` and both are
 pinned by tests. Anyone reproducing a single-task re-run should verify which log their
-report read rather than assume. (d) **Our EU `bbq` baseline is one of BBQ's eleven axes.**
+report read rather than assume. (d) **Our EU `bbq` baseline was one of BBQ's eleven axes.**
 `--limit` is global per invocation and `inspect_evals.bbq` concatenates its subsets with `Age`
-first, so `--limit 100` yields 100 `Age` samples and never reaches race, gender, nationality,
-religion, SES, disability, appearance or sexual orientation. We discovered this while
-re-measuring bias and it is why §4.2 withdraws the EU--Brazil bias delta rather than
-correcting it.
+first, so `--limit 100` yielded 100 `Age` samples and never reached race, gender, nationality,
+religion, SES, disability, appearance or sexual orientation. Raising the limit would not have
+helped — `Age` alone has 3,680 rows. We discovered this while re-measuring bias, and fixed it with
+an additive `axes="matched"` sampling mode that draws 48 rows from each of the four subsets
+matched to `bbq_brazil`'s axes (192 samples), selected **by sample id** so an upstream dataset
+change makes the task unloadable rather than silently sampling something else. The default
+(`axes="upstream"`) reproduces the superseded baseline unchanged, so both halves of the correction
+remain runnable, and the axis composition of every published run is committed as a generated
+census artifact rather than asserted. §4.2(c) reports the re-measured delta.
 
 ## 4. Results
 
@@ -357,11 +373,13 @@ rather than engineered away.
 carry the same defect and were not re-run (they exist only on a second machine); the
 Phase 9 re-run is future work. No claim in this paper rests on them.
 
-### 4.2 Correction: there is no measurable EU--Brazil bias delta either
+### 4.2 Correction: the EU baseline was one axis, and on matched axes there is no Brazil-worse gap
 
 The second retraction, and it is structurally different from the first. The disclosure gap was
-destroyed by one defect. The bias delta is defeated by two: one that made a model's answers
-unreadable, and one that makes the baseline the wrong baseline.
+destroyed by one defect. The bias delta was defeated by two: one that made a model's answers
+unreadable, and one that made the baseline the wrong baseline. Both are now fixed, so unlike §4.1
+this subsection ends with a measurement rather than a withdrawal — and the measurement contradicts
+the hypothesis we started from.
 
 **(a) An unreadable answer format, and iteration 1's diagnosis of it was wrong.** Inspect's
 `multiple_choice()` solver asks for *'ANSWER: $LETTER' (without quotes) where LETTER is one of
@@ -388,29 +406,65 @@ same configuration, one parser reading both models and both tasks:
 
 | Model | `bbq_brazil` ± se | *(clustered)* | EU `bbq` ± se | Δ (Brazil - EU) ± se | Δ ÷ se |
 | --- | :-: | :-: | :-: | :-: | :-: |
-| **Haiku 4.5** | **0.9010 ± 0.0146** | ± 0.0181 | 0.8570 ± 0.0341 | **+0.0440 ± 0.0386** | 1.1 |
-| **Sonnet 4.6** | **0.9372 ± 0.0115** | ± 0.0149 | 0.8350 ± 0.0354 | **+0.1023 ± 0.0384** | 2.7 |
+| **Haiku 4.5** | **0.9010 ± 0.0146** | ± 0.0181 | 0.8570 ± 0.0341 | ~~+0.0440 ± 0.0386~~ | ~~1.1~~ |
+| **Sonnet 4.6** | **0.9372 ± 0.0115** | ± 0.0149 | 0.8350 ± 0.0354 | ~~+0.1023 ± 0.0384~~ | ~~2.7~~ |
 | | ~~0.5568~~ | | ~~0.5340~~ | ~~-0.14~~ | *(Sonnet, superseded)* |
 
 The *clustered* column is the honest error bar for `bbq_brazil`: its four samples per scenario are
 not independent, so Inspect's `stderr()` is a lower bound, and this recomputes it with the scenario
-(n = 100) as the unit. The delta's error bar is dominated by the EU side either way.
+(n = 100) as the unit. The `bbq_brazil` column is final; the EU column and both deltas are struck by
+(b) below, which is why they are shown struck here rather than deleted.
 
-**(b) The baseline is one axis, so the delta is not a bias delta.** Our EU `bbq` baseline is 100
+**(b) The baseline was one axis, so the delta was not a bias delta.** Our EU `bbq` baseline was 100
 `Age` samples (§3(d)) — no race, gender, nationality, religion, class, disability, appearance or
-sexual-orientation items in it. So "Brazil minus EU" compares five Brazilian prejudices asked in
-Portuguese against **ageism asked in English**: it varies the prejudice as well as the jurisdiction.
+sexual-orientation items in it. So "Brazil minus EU" compared five Brazilian prejudices asked in
+Portuguese against **ageism asked in English**: it varied the prejudice as well as the jurisdiction.
 The claim that the pair reuses an identical *scorer* remains true and is worth having. The inference
-we drew from it — that the delta therefore isolates the Brazil-specific content — does not follow.
+we drew from it — that the delta therefore isolates the Brazil-specific content — does not follow,
+because it also requires the two sides to contain comparable items and nothing checked that.
 
-**What we say plainly.** Both models now score **higher** on the Brazilian set than on the EU one,
-which is the opposite of every direction we previously published. **Haiku's delta is not
-distinguishable from zero** (1.1 standard errors). Sonnet's is 2.7 standard errors from zero, which
-would be conventionally significant, but it is one model, it points away from the hypothesis, and its
-most economical explanation is that the Brazilian items are easier rather than that the model is less
-biased in Brazil. Given (b), we do not read either number as a bias comparison at all. **On this
-instrument there is no EU--Brazil bias gap in either direction, and we are not replacing the
-retracted negative delta with a positive one.**
+**(c) Re-measured on matched axes.** We rebuilt the EU baseline over the four upstream BBQ subsets
+that correspond to `bbq_brazil`'s axes — `Race_ethnicity` for Race (IBGE), `Religion` for Religion,
+`SES` for Class, and `Nationality` for Region — at 48 rows each, 192 samples, same configuration.
+Matched axes rather than a stratified sample of all eleven, because `bbq_brazil` covers none of
+`Age`, `Disability_status`, `Physical_appearance`, `Sexual_orientation` or `Gender_identity`, so an
+all-eleven baseline would still mix "Brazil-specific content" with "different prejudice families".
+**`Nationality` for Region is the weak substitution and we state it rather than hide it:** Brazil's
+regional prejudice is *internal* (nordestino/sudestino), BBQ's `Nationality` items are prejudice
+against foreigners, and `bbq_brazil`'s Intersectional axis has no BBQ counterpart at all.
+
+**Table 1c. Art. 5, III bias on matched axes** (`bbq_brazil` 400 samples; EU `bbq` 192 samples across
+four axes; 10 epochs, temperature 1.0, seed 42; both sides graded by the same parse, zero unreadable
+answers). Error bars cluster on the scenario on **both** sides.
+
+| Model | `bbq_brazil` ± se | EU `bbq` matched ± se | Δ (Brazil - EU) ± se | Δ ÷ se | distinguishable from 0 |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| **Haiku 4.5** | 0.9010 ± 0.0181 | **0.6833 ± 0.0240** | **+0.2177 ± 0.0300** | 7.3 | **yes** |
+| **Sonnet 4.6** | 0.9372 ± 0.0149 | **0.9323 ± 0.0210** | **+0.0050 ± 0.0257** | 0.2 | **no** |
+
+**What we say plainly, and it is three separate claims.** *First:* **the hypothesis is not
+supported.** Neither model scores lower on the Brazilian set; the predicted "Brazil worse" gap is
+absent on comparable prejudice families, and this is a measurement rather than an absence of one.
+*Second:* **Haiku's +0.218 is large and outside its error bar, and it is not a fairness result.** The
+per-axis breakdown says why: Haiku scores **0.500** on EU `SES` and **0.865** on Brazilian Class,
+**0.640** on EU `Race_ethnicity` and **0.865** on Brazilian Race. A 36-point gap on the *same
+prejudice family* is a statement about two instruments, not two jurisdictions — and the most
+economical explanation is item difficulty, because our own generator lints every `bbq_brazil`
+disambiguating sentence to name the gold answer verbatim in the answer-choice wording, while BBQ's
+items are naturalistic. A benchmark built to be unambiguous is easier. *Third:* **matched axes remove
+one confound, not both.** Prejudice family is now held constant; language, jurisdiction and item
+construction still move together, and no design in this paper separates them. A same-scorer,
+matched-axis delta is a difference between two **benchmarks** — the first version of this comparison
+that is even coherent, and still not a bias finding. The control that would make it one is a
+translated set, not a larger one (Future Work).
+
+**How much the defect was worth.** Worth stating numerically, because it is the strongest evidence in
+this paper for auditing a reused baseline: matching the axes moved Haiku's delta from +0.044 (1.1
+standard errors, not distinguishable) to **+0.218 (7.3 se, distinguishable)**, and Sonnet's from
++0.102 (2.7 se, nominally significant) to **+0.005 (0.2 se, not distinguishable)** — in **opposite
+directions**. The age-only baseline was not merely imprecise; it inverted which model appeared to have
+a gap. And it survived two iterations of correctly reported standard errors, which is the general
+lesson: **an error bar audits precision, never construct validity.**
 
 **What survives, and it is a within-benchmark comparison so (b) does not touch it.** The
 per-polarity split that iteration 2 added to `bbq_brazil` — BBQ's non-negative question half, absent
@@ -454,9 +508,12 @@ and Table 1a.
 Every cell in the hd-BR column is the same quantity (the English share of the dataset),
 so the column is one constant six times, not six measurements. The **hd EU** column is
 unaffected: English prompt, English target.
-The **Δ bias** column is retracted in full as well — see §4.2 and Table 1b. Every cell in it
-is a Brazilian-content score differenced against an **age-only** EU baseline, so it varies
-the prejudice as well as the jurisdiction; and Sonnet's two inputs to it were unreadable.
+The **Δ bias** column is retracted in full as well — see §4.2. Every cell in it is a
+Brazilian-content score differenced against an **age-only** EU baseline, so it varies the prejudice
+as well as the jurisdiction; and Sonnet's two inputs to it were unreadable. The two frontier rows
+are replaced by the matched-axis measurement in **Table 1c**; the four local rows are **not
+replaced**, because rebuilding their baseline needs an Ollama machine (it costs \$0 there and is the
+highest-value line left in that matrix).
 
 ‡ Sonnet's BBQ figures are **unsound, for a reason found on 2026-07-26 and now fixed**: it
 copies the answer template's placeholder literally and replies **`ANSWER: $B`**, which the
@@ -475,13 +532,14 @@ were never censused for empty answer fields, which is a one-line check Phase 9 m
 † Local `aia_checklist` is a single scenario at 1 epoch
 (n = 1) — read the local 1.000s as one observation, not a precise score.
 
-**Bias (Art. 5, III): withdrawn — see §4.2.** The iteration-1 reading of this row was, quoted
-and withdrawn: *"directional trend, not yet conclusive — on the 44-sample set both reliable
-frontier models are negative (Haiku -0.18, Sonnet -0.14) and 4/6 models are negative overall
-(mean about -0.05), so the direction supports more bias on Brazilian categories."* One of the
-two frontier deltas was built from unreadable answers; every delta in the column is differenced
-against an age-only EU baseline; and on the corrected measurement both frontier models score
-*higher* on the Brazilian set. There is no bias gap here in either direction.
+**Bias (Art. 5, III): withdrawn, and re-measured — see §4.2.** The iteration-1 reading of this row
+was, quoted and withdrawn: *"directional trend, not yet conclusive — on the 44-sample set both
+reliable frontier models are negative (Haiku -0.18, Sonnet -0.14) and 4/6 models are negative overall
+(mean about -0.05), so the direction supports more bias on Brazilian categories."* One of the two
+frontier deltas was built from unreadable answers, and every delta in the column is differenced
+against an age-only EU baseline. On matched axes (Table 1c) **neither frontier model is negative**:
+Sonnet is +0.005 ± 0.026 and Haiku is +0.218 ± 0.030. **The predicted gap is not there**, and the
+reversal in Haiku is a difference between two benchmarks rather than a fairness result (§4.2(c)).
 
 **Art. 6 triad + AIA: confirmed "beyond the EU," with a sharpened story.** All six
 models score **0.72-0.99** on explanation, contestation / human review, and AIA — i.e.,
@@ -498,17 +556,26 @@ is no longer "why disclosure and not these?" but how much of the competence is g
 procedural knowledge rather than rubric vocabulary, which is what §4's judge cross-check
 is for.
 
-**Methodological finding: an EU baseline can manufacture a direction.** One model's bias
-delta, on one unchanged behaviour, has now been published with **three different signs**.
-Scaling the EU `bbq` baseline from 20 to 1000 observations moved Haiku's delta from **+0.05**
-to **-0.18**, because the baseline itself moved 0.65 to 0.858. Fixing the answer parse and
-rebuilding `bbq_brazil` moved it to **+0.04** (§4.2). No model changed at any point. Two
-distinct baseline defects compound to produce that: **under-powered** (the 20-sample pilot) and
-**single-axis** (every `bbq` baseline here is age-only, §3(d)). Read together with the five
-instrument defects in §3, the generalisation we would defend is stronger than
-"use a properly-powered baseline": **in a cross-jurisdiction comparison, the instrument is the
-most likely source of the effect, and the reused baseline deserves the same audit as the new
-benchmark.** Ours did not get it until iteration 2.
+**Methodological finding: an EU baseline can manufacture a direction.** One model's bias delta, on
+one unchanged behaviour, has now been published at **four values with three different signs**.
+Scaling the EU `bbq` baseline from 20 to 1000 observations moved Haiku's delta from **+0.05** to
+**-0.18**, because the baseline itself moved 0.65 to 0.858. Fixing the answer parse and rebuilding
+`bbq_brazil` moved it to **+0.04**. Matching the *axes* moved it to **+0.22** (§4.2(c)). No model
+changed at any point. Three distinct baseline defects compound to produce that: **under-powered**
+(the 20-sample pilot), **unreadable** (a parser that could not read one model's answer format, at
+different rates on the two sides), and **single-axis** (every `bbq` baseline here was age-only until
+§4.2(c), §3(d)).
+
+The third is the one worth generalising, for two reasons. It is the **largest** — worth +0.17 on
+Haiku and -0.10 on Sonnet, i.e. it moved the two models in **opposite directions**, so it did not
+merely add noise but changed which model appeared to have a gap. And it survived two iterations of
+**correctly reported standard errors**: the delta cleared its own error bar while comparing ageism in
+English against Brazilian racism in Portuguese. **An error bar audits precision, never construct
+validity.** Read together with the six instrument defects in §3, the generalisation we would defend
+is stronger than "use a properly-powered baseline": **in a cross-jurisdiction comparison the
+instrument is the most likely source of the effect, and the reused baseline deserves the same audit
+as the new benchmark.** Ours did not get it until iteration 2, and the check that would have caught
+it is one line — print the axis composition of your baseline.
 
 ## 5. Positionality, participation, and human rights
 
@@ -709,23 +776,24 @@ that argument is structural and survives every number in this paper moving. What
 *not* survive is the version of it we previously led with. We argued that a model can pass
 an English / EU audit and still systematically violate a Global-South statutory right, and
 offered the disclosure gap as the cleanest example and the bias delta as the supporting
-trend. **Both were our own measurement error** (§4.1, §4.2): on the corrected measurements
-these models comply with Art. 5, I in Portuguese, and there is no EU--Brazil bias delta in
-either direction that our instrument can support. The structural argument therefore stands
-on the *absence* of counterparts — Brazil's Art. 6 explanation, contestation and human-review
-rights and its Arts. 25-28 AIA have no EU benchmark at all — rather than on a demonstrated
-behavioural failure. That is a weaker claim than the one we made, and it is the one the
-evidence supports.
+trend. **Both were our own measurement error** (§4.1, §4.2): on the corrected measurements these
+models comply with Art. 5, I in Portuguese, and on an EU baseline drawn over matched prejudice axes
+neither model is worse on the Brazilian set — Sonnet's delta is zero and Haiku's runs the other way.
+The structural argument therefore stands on the *absence* of counterparts — Brazil's Art. 6
+explanation, contestation and human-review rights and its Arts. 25-28 AIA have no EU benchmark at all
+— rather than on a demonstrated behavioural failure. That is a weaker claim than the one we made, and
+it is the one the evidence supports.
 
-**The five broken instruments are themselves a result, and we would put them ahead of any
-score in this paper.** Four of the five (§3) sat under a number we had already published, and
-the two that mattered most were in *reused* code — an upstream scorer's target-matching
-contract, and an upstream solver's answer format — which is precisely the code a
-cross-jurisdiction benchmark must reuse for its delta to mean anything. The generalisation:
+**The six broken instruments are themselves a result, and we would put them ahead of any
+score in this paper.** Five of the six (§3) sat under a number we had already published, and
+the three that mattered most were in *reused* code — an upstream scorer's target-matching
+contract, an upstream solver's answer format, and the sampling of the reused EU baseline itself —
+which is precisely the code a cross-jurisdiction benchmark must reuse for its delta to mean
+anything. The generalisation:
 **a localized benchmark's most likely source of a finding is its own instrument, and the
-reused baseline is the least audited part of it.** None of the five was visible in a standard
-error; three of the five inflated a score and two destroyed one; each has a one-line check that
-we did not run. If there is a transferable contribution here beyond the artifacts, it is that
+reused baseline is the least audited part of it.** None of the six was visible in a standard
+error; three inflated a score, two destroyed one, and the sixth was orthogonal to magnitude
+altogether; each has a one-line check that we did not run. If there is a transferable contribution here beyond the artifacts, it is that
 list of checks and the practice of publishing the retraction rather than the correction alone.
 
 vigilAI still shows the localization is achievable with modest effort: a fork,
@@ -734,13 +802,13 @@ statute-referenced, reproducible compliance picture, and the Art. 28 scorecard t
 eval run into the exact public-conclusions artifact a high-risk deployer is obligated to
 produce.
 
-**A second implication, which is about us rather than about the models.** Three of the
-four defects this iteration found were in *our own instruments*, not in the models: six
-over-broad scorer cues that gave `contestation_review` a floor of 0.5, an
-`aia_checklist` prompt that enumerated its own answer key (echo floor 0.944) and cue
-lists that scored a content-free non-answer 6/6, and the disclosure target above. Every
-one of them **inflated or fabricated a finding**, none of them was visible in a standard
-error, and the last one produced the paper's headline. A compliance-evaluation tool
+**A second implication, which is about us rather than about the models.** Four of the six
+defects this iteration found were in *our own instruments*, not in the models: six over-broad
+scorer cues that gave `contestation_review` a floor of 0.5, an `aia_checklist` prompt that
+enumerated its own answer key (echo floor 0.944) and cue lists that scored a content-free
+non-answer 6/6, the disclosure target above, and a bias baseline that contained only ageism. Every
+one of them **inflated, fabricated or misdirected a finding**, none of them was visible in a
+standard error, and two of them produced published headlines. A compliance-evaluation tool
 carries the same obligation it measures: to state what would change its conclusion and
 to make the check reproducible. Concretely, that means scoring your own rendered prompt
 against your own scorer, probing your cue lists with a hostile non-answer, asserting
@@ -859,13 +927,19 @@ None of this is legal advice; see the final limitation below.
   cells could not be, because those log directories no longer exist. The four open-weight
   models' disclosure figures are retracted outright (§4.1) and were not re-run, and their
   BBQ figures inherit the age-only-baseline problem in their delta.
-- **The EU `bbq` baseline is a single BBQ axis, and this is the limitation we would most want
-  a reader to carry.** `--limit` is global per invocation and `inspect_evals.bbq` concatenates
-  its eleven subsets with `Age` first, so every EU bias baseline in this project is 100 `Age`
-  samples. Fixing it is cheap — sample across the subsets, about \$0.58 per frontier model and
-  \$0 on Ollama — and until it is done the Art. 5, III row has a defensible *absolute* score and
-  no defensible EU comparison. We found this while re-measuring bias after fixing the parse; it
-  had been true, unexamined, in both iterations.
+- **A matched-axis delta is a difference between two benchmarks, not between two jurisdictions —
+  and this is the limitation we would most want a reader to carry.** The EU baseline is no longer a
+  single axis: it is drawn over the four subsets matched to `bbq_brazil`'s (§4.2(c)). What matching
+  the axes buys is the removal of *one* confound, the prejudice family. It does not remove the
+  others, and the per-axis numbers make the residual visible rather than arguable: Haiku scores
+  0.500 on EU `SES` items and 0.865 on Brazilian class items. Language, jurisdiction and **item
+  construction** still move together, and item construction is not incidental — our generator lints
+  every Brazilian disambiguating sentence to name the gold answer verbatim in the answer-choice
+  wording, so our items are easier than BBQ's naturalistic ones **by design**. The honest reading of
+  Haiku's +0.218 is therefore "these two benchmarks differ", not "this model is fairer in Brazil".
+  Two further residuals: `Nationality` stands in for Region although Brazil's regional prejudice is
+  internal rather than xenophobic, and `bbq_brazil`'s Intersectional axis has no BBQ counterpart. The
+  four open-weight models were **not** re-run and their deltas remain retracted.
 - **Attribution assumption, and how it failed.** We assume the same-scorer EU--Brazil
   delta attributes differences to language / legal content, because format and scorer are
   identical. The assumption is sound and the *instantiation* was not: "same scorer" is not
@@ -878,7 +952,8 @@ None of this is legal advice; see the final limitation below.
   items each side actually contains*. **Three of those five have now bitten this project**: the
   target (the disclosure pair, §4.1), the extraction (the `bbq` pair for one model) and the
   content (the `bbq` pair for every model, §4.2). None of the three was predicted; each was found
-  by looking.
+  by looking. A fourth is now *known* and unfixed: matching the items by prejudice family does not
+  match them by construction difficulty (previous bullet).
 - **Not legal advice.** The PL 2338/2023 article mappings are an engineering
   interpretation built for evaluation, made against a bill still moving through the
   legislative process; they are a research instrument, not a legal determination of
@@ -896,9 +971,15 @@ that would let the bias benchmark's *content* be defended rather than only its a
 begins with Tier-1
 contact rather than with recruitment: putting `docs/participation-protocol.md` in front
 of one Brazilian algorithmic-racism organization and asking whether the protocol is the
-right shape, before asking anyone to execute it. **Rebuild the EU bias baseline across BBQ's
-eleven subsets** — cheap, and it is what a Brazil-vs-EU bias comparison actually requires
-(§4.2(b)). Beyond that: resolve the CEP question
+right shape, before asking anyone to execute it. **Build a construction-matched control for the bias
+delta.** Matching the *axes* (§4.2(c)) removed the prejudice-family confound and exposed a large
+residual that is almost certainly item difficulty: a 36-point spread between EU `SES` and Brazilian
+class items for one model. The design that separates the remaining variables is a **translated
+control** — the same Brazilian scenarios rendered in English, and/or BBQ items rewritten to
+`bbq_brazil`'s construction rules — so that language and construction move one at a time. That, not
+a larger sample, is what would turn the delta into a bias finding. **Rebuild the matched-axis EU
+baseline for the four open-weight models** too: \$0 on Ollama, and their deltas stay retracted until
+it is done. Beyond that: resolve the CEP question
 in writing; scale the open-weight models to the same config as the frontier ones so the
 two halves are directly comparable; extend the sector overlays as ANPD's Art. 20
 rulemaking and CFM Res. 2.454/2026's entry into force (about 26 August 2026) change the
@@ -915,14 +996,17 @@ a -0.45 Portuguese disclosure gap and a negative bias delta; **neither survived 
 own instruments.** The gap was an artefact of our scoring target, and
 on the corrected measurement the two frontier models disclose in Portuguese as reliably as
 in English (deltas -0.014 ± 0.014 and -0.038 ± 0.038). The bias delta rested on an answer format
-our parser could not read and on an EU baseline containing one of BBQ's eleven axes; corrected,
-both models score *higher* on the Brazilian set, and we report no bias gap rather than a
-reversed one. **On the behaviour we can currently
-measure, there is no EU--Brazil compliance gap in either disclosure or bias** — and reporting
-that, together with the five broken instruments and how a rule-selected transcript exposed the
-first of them before write-up, is the result we can defend. The finding a reader should take
-away is about measurement: **in a cross-jurisdiction benchmark, audit the instrument before
-believing the effect, and audit the reused baseline hardest.**
+our parser could not read and on an EU baseline containing one of BBQ's eleven axes. We fixed both
+and re-measured on **matched prejudice axes**: the predicted gap is **absent** — Sonnet's delta is
++0.005 ± 0.026 and Haiku's runs the other way at +0.218 ± 0.030. We do not report that reversal as a
+fairness finding, because a 36-point spread between EU socio-economic-status items and Brazilian
+class items for the same model is a difference between two benchmarks. **On the behaviour we can
+currently measure, there is no EU--Brazil compliance gap in either disclosure or bias** — and
+reporting that, together with the six broken instruments and how a rule-selected transcript exposed
+the first of them before write-up, is the result we can defend. The finding a reader should take away
+is about measurement: **in a cross-jurisdiction benchmark, audit the instrument before believing the
+effect, and audit the reused baseline hardest — an error bar audits precision, never construct
+validity.**
 Meanwhile, Brazil's high-risk Art. 6 rights
 (explanation, **contestation, human review**) and its AIA have **no EU benchmark
 counterpart at all**, and vigilAI introduces deterministic benchmarks for them. One of
@@ -1048,13 +1132,24 @@ pin a defect that had already been published.
   bullet used to carry are retracted or superseded: `human_deception_brazil` ~~0.524 ± 0.112~~
   (both frontier, §4.1), `bbq_brazil` Haiku ~~0.677 ± 0.070~~ and Sonnet ~~0.375 ± 0.056~~
   (§4.2). Corrected: `human_deception_brazil` Haiku 0.986 ± 0.014 / Sonnet 0.962 ± 0.038;
-  `bbq_brazil` Haiku 0.901 ± 0.015 / Sonnet 0.937 ± 0.012; EU `bbq` Haiku 0.857 ± 0.034 /
-  Sonnet 0.835 ± 0.035. `contestation_review` Haiku 0.975 ± 0.023, Sonnet 0.983 ± 0.013 are
-  iteration-1 figures from the pre-fix cue lists and are superseded too.
-- **The BBQ re-score.** The iteration-2 BBQ figures come from re-scoring the committed Phase 8
-  `.eval` logs with `tools/rescore_bbq.py`, not from a new run — same generations, one parser
+  `bbq_brazil` Haiku 0.901 ± 0.015 / Sonnet 0.937 ± 0.012; EU `bbq` on **matched axes** Haiku
+  0.683 ± 0.033 / Sonnet 0.932 ± 0.017 (the age-only figures 0.857 / 0.835 are superseded).
+  `contestation_review` Haiku 0.975 ± 0.023, Sonnet 0.983 ± 0.013 are iteration-1 figures from the
+  pre-fix cue lists and are superseded too.
+- **The BBQ re-score.** The iteration-2 `bbq_brazil` figures come from re-scoring the committed Phase
+  8 `.eval` logs with `tools/rescore_bbq.py`, not from a new run — same generations, one parser
   across both models and both tasks. The pre-fix logs are kept beside the re-scored copies, so
   `vigilai report` can be pointed at either and the before/after is reproducible at \$0.
+- **The matched-axis EU baseline** is a new run, because it changes which items are asked:
+  `uv run vigilai eval <model> --tasks bbq --task-arg bbq:axes=matched --limit 192 --epochs 10
+  --temperature 1.0 --seed 42`. It cost \$1.30 for both frontier models. The sample set is pinned by
+  sample id (48 rows from each of `Race_ethnicity`, `Religion`, `SES`, `Nationality`), so it is
+  reproducible without a seed, and a change to the upstream dataset makes the task fail to load
+  rather than silently sample something else. The axis and cell composition of both published runs,
+  the per-axis scores, both error bars and the full list of 192 sample ids are committed at
+  `docs/bbq-matched-axes-census.md`, generated by `tools/bbq_axis_census.py` from the logs and checked
+  against the sampler's own rule by `tests/test_bbq_axes.py`. `axes="upstream"` is still the default,
+  so the superseded age-only baseline remains runnable and the before/after stays checkable.
 
 \newpage
 

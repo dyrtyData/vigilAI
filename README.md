@@ -147,6 +147,61 @@ defect — recorded as known exposure, since none of them is in the Brazil matri
 `Score.answer` is empty.** That is what would have caught this in iteration 1, where the anomaly was
 instead spot-checked and written up as a behavioural difference between models.
 
+**One change to which EU items are sampled at all (2026-07-26), and it outranks the parse fix.**
+`--limit` is global per invocation and `inspect_evals.bbq.combine_subsets` concatenates its eleven
+subsets with `Age` **first**, so `--limit 100` took `Age_00000`–`Age_00099`: **every EU `bbq`
+baseline in this project, in both iterations, was 100 age-discrimination samples.** The EU↔Brazil
+bias delta was therefore comparing five Brazilian prejudices in Portuguese against ageism in
+English — and raising the limit would not have helped, because `Age` alone has 3,680 rows. Nothing in
+a standard error could show it; the check is a *census*, not a statistic.
+
+`bbq` gains two additive kwargs, both with literal defaults that preserve the previous behaviour
+exactly (`axes="upstream"`, `per_axis_limit=0` — the untouched upstream dataset object, so every
+earlier run stays reproducible with the same command):
+
+| kwarg | meaning |
+|---|---|
+| `axes="matched"` | Only the four subsets matched to `bbq_brazil`'s axes — `Race_ethnicity` (Race/IBGE), `Religion`, `SES` (Class), `Nationality` (**Region — closest analogue only**) — interleaved round-robin. Defaults to 48 rows each = **192 samples**. |
+| `per_axis_limit=N` | Rows per axis. Works with `axes="upstream"` too, for a *balanced* all-eleven sample. |
+
+```bash
+uv run vigilai eval anthropic/claude-haiku-4-5 --tasks bbq --task-arg bbq:axes=matched \
+  --limit 192 --epochs 10 --temperature 1.0 --seed 42 --log-dir logs/matched
+uv run python tools/bbq_axis_census.py logs/matched      # axis + cell census, both error bars
+```
+
+Four properties worth knowing, each pinned by a test in
+[`tests/test_bbq_axes.py`](tests/test_bbq_axes.py):
+
+- **Matched axes, not a stratified sample of all eleven.** `bbq_brazil` covers none of `Age`,
+  `Disability_status`, `Physical_appearance`, `Sexual_orientation` or `Gender_identity`, so an
+  all-eleven baseline would still mix "Brazil-specific content" with "different prejudice families".
+  `Race_x_SES` is excluded on purpose — it would double-count the race and SES rows already sampled.
+- **Deterministic with no seed.** The sample set is the first N rows of each axis **selected by
+  sample id** (`f"{axis}_{i:05d}"`), so it is a pure function of the pinned dataset revision and a
+  change in Hugging Face row order cannot change it. If a pinned id is missing the task **raises**
+  rather than substituting whatever is first — that is the drift guard, and it runs at task
+  construction rather than only in a test.
+- **Any `--limit` stays balanced.** Round-robin interleaving (mirroring `bbq_brazil`'s
+  `_interleave_by_category`) means a multiple of **4** keeps the axes balanced and a multiple of
+  **16** also keeps the four (context × polarity) cells balanced. 48 per axis rather than 50 for that
+  second reason: 48 is a multiple of 4, so each axis contributes exactly 12 rows per cell and the EU
+  side matches `bbq_brazil`'s own exact cell balance; 50 would give 52 `neg` against 48 `nonneg`.
+- **The composition of every published run is a committed artifact, not a claim.**
+  [`docs/bbq-matched-axes-census.md`](docs/bbq-matched-axes-census.md) is generated from the real
+  `.eval` logs and carries the axis breakdown, the cell breakdown, the per-axis scores, both error
+  bars and all 192 sample ids; a test checks that id list against the sampler's own rule, so the
+  artifact and the code cannot drift apart.
+
+**What the fix does *not* buy, stated because a corrected number is the easiest place to acquire a
+new overclaim.** Matched axes hold the *prejudice family* constant. They do not hold **item
+difficulty** constant, and `bbq_brazil`'s generator lints every disambiguating sentence to name the
+gold answer verbatim in the answer-choice wording, which makes its items easier than upstream BBQ's
+naturalistic ones by design. Haiku scores **0.500** on EU `SES` and **0.865** on Brazilian Class — the
+same prejudice family, 36 points apart. So a matched-axis delta is a difference between two
+**benchmarks**, and the README, the results page and the paper all say so rather than calling it a
+bias gap.
+
 **Sample count and uncertainty — the honest version.** The four samples of a scenario are **not
 independent observations**: the two polarities share a disambiguating context, and the two contexts
 share a scenario. Inspect's `stderr()` treats every sample as independent, so **the standard error
@@ -777,7 +832,11 @@ standalone:
   −0.10 carrying the same bar does not — and the report now shows you which one you have.
   **It does not check whether the two sides contain comparable items**, which is a separate and
   larger risk: the EU `bbq` baseline turned out to be age-only, so its delta cleared its error bar
-  while comparing different prejudices. An error bar audits precision, never construct validity.
+  for two iterations while comparing different prejudices. **An error bar audits precision, never
+  construct validity.** The `bbq` side is now sampled on axes matched to `bbq_brazil`'s
+  (`--task-arg bbq:axes=matched`), and the check that would have caught the original defect is not a
+  statistic but a census — `uv run python tools/bbq_axis_census.py <run dir>` prints which axes a
+  baseline actually drew, in what proportion.
 - **Below two samples there is no `±` at all.** Inspect's `stderr()` returns a placeholder `0` when
   it has fewer than two observations, and printing `0.983 ± 0.000` for a single-observation task
   would read as infinitely precise. A genuine `0.000` from two or more identically scored samples
@@ -1041,23 +1100,30 @@ Brazil-specific content; `bbq_brazil` = deepened 44-sample set):
 | Pair | Haiku 4.5 | Sonnet 4.6 |
 |---|---|---|
 | Art. 5, I — AI disclosure (Brazil − EU) ⛔ | ~~0.524 − 1.000 = −0.48~~ → **−0.014 ± 0.014** | ~~0.524 − 1.000 = −0.48~~ → **−0.038 ± 0.038** |
-| Art. 5, III — bias, IBGE/regional (Brazil − EU) ⛔ | ~~0.677 − 0.858 = −0.18~~ → **+0.044 ± 0.039** | ~~0.402 − 0.498 = −0.10~~ → **+0.102 ± 0.038** |
+| Art. 5, III — bias, IBGE/regional (Brazil − EU) | ~~0.677 − 0.858 = −0.18~~ → ~~+0.044~~ → **+0.218 ± 0.030** | ~~0.402 − 0.498 = −0.10~~ → ~~+0.102~~ → **+0.005 ± 0.026** |
 
-> **⛔ The Art. 5, III bias delta is retracted too, and not replaced by the corrected numbers
-> beside it.** Two independent defects. (1) Sonnet's two inputs were **unreadable**: it answers
-> `ANSWER: $B` and upstream's parser cannot match it, on 41% of the Brazil samples and 32% of the EU
-> ones. Fixed and the logs re-scored (see the `bbq_brazil` section above); iteration 1's own
-> investigation of this anomaly concluded it was *"a genuine behavioral quirk, not a scorer bug"*,
-> and that conclusion was **wrong**. (2) **The EU baseline is one of BBQ's eleven axes.** `--limit`
-> is global per invocation and `inspect_evals.bbq` concatenates its subsets with `Age` first, so
-> `--limit 100` yields 100 `Age` samples and never reaches race, gender, nationality, religion,
-> class, disability, appearance or sexual orientation. The Δ therefore compares five Brazilian
-> prejudices in Portuguese against **ageism in English** — it varies the prejudice as well as the
-> jurisdiction. The corrected deltas above are shown because hiding them would be worse, but
-> **Haiku's is 1.1 standard errors from zero and neither is interpretable as a bias gap.** The
-> absolute `bbq_brazil` figures (Haiku 0.901 ± 0.015, Sonnet 0.937 ± 0.012 on the 400-sample set)
-> are the defensible numbers. Rebuilding the EU baseline across the subsets — about $0.58 per
-> frontier model — is the top item in future work.
+> **The Art. 5, III bias delta was broken twice and is now re-measured on matched axes.**
+> (1) Sonnet's two inputs were **unreadable**: it answers `ANSWER: $B` and upstream's parser cannot
+> match it, on 41% of the Brazil samples and 32% of the EU ones. Fixed and the logs re-scored (see
+> the `bbq_brazil` section above); iteration 1's own investigation of this anomaly concluded it was
+> *"a genuine behavioral quirk, not a scorer bug"*, and that conclusion was **wrong**.
+> (2) **The EU baseline was one of BBQ's eleven axes.** `--limit` is global per invocation and
+> `inspect_evals.bbq` concatenates its subsets with `Age` first, so `--limit 100` yielded 100 `Age`
+> samples and never reached race, gender, nationality, religion, class, disability, appearance or
+> sexual orientation. Every earlier Δ therefore compared five Brazilian prejudices in Portuguese
+> against **ageism in English**. Fixed by `--task-arg bbq:axes=matched`, which draws 48 rows from
+> each of `Race_ethnicity`, `Religion`, `SES` and `Nationality` (192 samples).
+>
+> **What the matched-axis numbers say, in order of what a reader should take away.** The predicted
+> "Brazil worse" gap is **absent in both models** — Sonnet's delta is zero, Haiku's runs the other
+> way. **Haiku's +0.218 is not a fairness finding:** it scores 0.500 on EU `SES` and 0.865 on
+> Brazilian Class — the *same prejudice family*, 36 points apart — so what moved is the benchmark,
+> not the jurisdiction, and `bbq_brazil`'s items are easier by construction (its generator lints
+> every disambiguating sentence to name the gold answer verbatim in the answer-choice wording).
+> **Matched axes remove the prejudice-family confound, not the item-difficulty one**, so a
+> matched-axis Δ is a difference between two *benchmarks*. Census, per-axis scores, cluster-robust
+> bars and the pinned sample ids: [`docs/bbq-matched-axes-census.md`](docs/bbq-matched-axes-census.md).
+> The four open-weight models were **not** re-run and their Δ stays retracted ($0 on Ollama).
 
 **⛔ Retracted key finding (Art. 5, I — AI disclosure).** This README previously reported that both
 frontier models deny being human on ~100% of the English questions but only ~52% of the Portuguese
@@ -1072,10 +1138,12 @@ and **Sonnet 0.962 ± 0.038** (Portuguese 0.920, itself a floor — its misses w
 and are retracted without replacement pending a re-run. Full account:
 [`reports/RESULTS.md`](reports/RESULTS.md) and §8 of
 [`docs/task-artifacts/iteration-2-implementation-log.md`](docs/task-artifacts/iteration-2-implementation-log.md).
-On bias, **both** frontier models score *lower* on the
+~~On bias, **both** frontier models score *lower* on the
 Brazilian IBGE / regional / intersectional set than on US-centric BBQ (Haiku −0.18, Sonnet −0.10) —
 a trend in the predicted direction (4/6 models negative; the Brazilian set is a 44-scenario pilot,
-so suggestive not yet conclusive). The **complete high-risk Art. 6 rights triad** is now measured:
+so suggestive not yet conclusive).~~ **Withdrawn and re-measured** — see the Art. 5, III note above:
+on an EU baseline drawn over matched prejudice axes neither frontier model is worse on the Brazilian
+set. The **complete high-risk Art. 6 rights triad** is now measured:
 models articulate explanation (0.83–0.85) and contestation + human review
 (`contestation_review` 0.97–0.99) well. ~~The failure is specific to *disclosure*.~~ **Withdrawn
 with the disclosure gap:** there is no disclosure failure for these scores to be contrasted
@@ -1084,7 +1152,9 @@ Brazil's Art. 6
 rights and Arts. 25-28 AIA obligations have **no EU/COMPL-AI counterpart at all** — the "no EU
 equivalent" rows are themselves a finding. See [reports/RESULTS.md](reports/RESULTS.md) for the full
 two-batch six-model matrix, standard errors, the investigated Sonnet `bbq` behavior, and the
-methodological note that a small-n EU baseline flipped the pilot's bias sign (+0.05 → −0.18).
+methodological note that one model's bias delta has now been published at **four values with three
+signs** (+0.05 → −0.18 → +0.04 → +0.22) without the model changing once — every move produced by the
+instrument, and the largest of them by a baseline that contained only ageism.
 Per-model reports: Stage-7 baseline → [reports/runs/stage7-phases1-7/](reports/runs/stage7-phases1-7/);
 Phase 8–11 additions → [reports/runs/phase8-11/](reports/runs/phase8-11/).
 

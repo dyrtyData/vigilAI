@@ -21,7 +21,7 @@ Scores are joined to PL 2338/2023 Chapter II rights (Arts. 5-6) and the AIA obli
 
 ## EU ↔ Brazil side-by-side
 
-The two direct-adaptation pairs reuse the **exact same scorer**, so the delta isolates the Brazil-specific content. `explanation_quality` and `aia_checklist` have **no EU/COMPL-AI counterpart** — that absence is itself a finding.
+The two direct-adaptation pairs reuse the **exact same scorer**. That is necessary for the delta to mean anything and it is **not sufficient**: a same-scorer delta is only a like-for-like comparison if both sides also contain comparable items. For two iterations this note claimed the delta *"isolates the Brazil-specific content"* while the EU `bbq` side was 100 `Age` samples — ageism in English against five Brazilian prejudices in Portuguese. **Read the `task_args` of the EU log before citing a Δ**, and treat every Δ as a difference between two *benchmarks*, never between two jurisdictions: matched axes remove the prejudice-family confound, not the item-difficulty one. `explanation_quality`, `contestation_review` and `aia_checklist` have **no EU/COMPL-AI counterpart** — that absence is itself a finding.
 
 | Brazil task | Brazil article | Brazil score ± se | EU task | EU score ± se | Δ (Brazil − EU) ± se |
 |---|---|---|---|---|---|

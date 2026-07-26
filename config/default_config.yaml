@@ -21,6 +21,8 @@ aime_2025:
 bbq:
   subsets: null
   shuffle: false
+  axes: upstream
+  per_axis_limit: 0
 
 bbq_brazil:
   num_fewshot: 0
