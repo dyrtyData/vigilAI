@@ -138,11 +138,29 @@ files.extend-exclude = [
 # listed because it is an *anglicism deny-list entry* in `tools/brazil_rubric_scenarios.py` — the
 # word appears there in order to be forbidden in scenario text.
 #
+# Phase 10 added `STIL`: the Brazilian NLP symposium (*Simpósio Brasileiro de Tecnologia da
+# Informação e da Linguagem Humana*, SBC/CE-PLN), named in `docs/participation-protocol.md` as one
+# of the two venues where a pt-BR bias benchmark is natively legible. `typos` reads the acronym as
+# a misspelling of "STILL". There is no alternative spelling — the acronym *is* the name — so it
+# is listed rather than reworded. (The other Phase 10 false positive, `Comput` from the journal
+# abbreviation "PLOS Comput Biol", was removed by spelling the journal out instead, which is
+# strictly better than a dictionary entry.)
+#
 # NOT silenced, and therefore still failing `uvx typos`: `explicitely` / `explicite` /
-# `explcitely` / `fo` in `src/vigilai/tasks/cab/*.json`. Those are real English typos in data
-# vendored from upstream COMPL-AI; they should be fixed in place (or the upstream files excluded
-# as vendored data) when Phase 10 makes `uvx typos` clean, not hidden behind a dictionary entry.
+# `explcitely` / `fo` in `src/vigilai/tasks/cab/*.json` — **9 errors, the pre-iteration-2
+# baseline, unchanged by every phase so far.** Those are real English typos in *benchmark data*
+# vendored verbatim from upstream COMPL-AI (`cab`'s few-shot examples and its grader JSON
+# schemas). **Phase 10 deliberately did NOT fix them, and the decision is recorded rather than
+# deferred silently:** editing them changes vendored benchmark *content*, not prose, which (a)
+# diverges this fork from upstream in the exact files a future upstream PR would have to
+# reconcile (see the docs 06-08 upstreaming workstream), and (b) alters a grader prompt and two
+# JSON schema descriptions that the `cab` task feeds to a model — a scoring-surface change
+# masquerading as a spelling fix. It belongs in its own commit with its own reasoning, taken
+# together with the choice between fixing in place and adding `src/vigilai/tasks/cab/` to
+# `files.extend-exclude` as vendored data. Until then `uvx typos` exits non-zero with exactly
+# these 9, and any *new* error is a real regression.
 [tool.typos.default.extend-words]
+STIL = "STIL"
 administrativo = "administrativo"
 analise = "analise"
 analises = "analises"

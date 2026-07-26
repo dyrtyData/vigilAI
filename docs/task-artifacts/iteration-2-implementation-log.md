@@ -4163,3 +4163,290 @@ two independent ones in `TestHeaderOnlyGuarantee`:
 - **Do not add a fourth rule to make an example "better".** The whole value of this phase is that
   the three rules are stated and fixed before the numbers are known. Adding a rule after seeing the
   data is cherry-picking with extra steps.
+
+---
+
+## Phase 10 — Paper: HR / decolonial-feminist framing + participation protocol · [either] · 2026-07-26
+
+**Status:** complete (automated verification passed; three manual checks open — see *What is left
+for a human*)
+**Commit(s):** _pending — working tree, not yet committed_
+
+The only phase of iteration 2 with **no code dependency**, which is why it lands while Phases 8
+and 9 wait on a funded key and on Ian's machine. One new document, one new paper section, a
+rewritten Discussion spine, and exactly **one `src/` change** — a docstring.
+
+### Commands run
+
+```bash
+# primary-source verification (see "Verbatim verification" below) — all via curl, browser UA
+curl -sS "https://www.planalto.gov.br/ccivil_03/_ato2015-2018/2018/lei/l13709.htm"        # LGPD consolidated
+curl -sS "https://www.planalto.gov.br/ccivil_03/_ato2011-2014/2011/lei/l12414.htm"        # Cadastro Positivo
+curl -sSL "https://www.planalto.gov.br/ccivil_03/_ato2019-2022/2019/Msg/VEP/VEP-288.htm"  # the veto message
+curl -sS "https://www.congressonacional.leg.br/materias/vetos/-/veto/detalhe/12445"       # Veto 24/2019 + tally
+curl -sSL "https://sistemas.cfm.org.br/normas/arquivos/resolucoes/BR/2026/2454_2026.pdf"  # CFM 2454/2026
+curl -sS "https://export.arxiv.org/api/query?id_list=2007.02423,2209.07572,2305.11840,2307.16778"
+curl -sS "https://export.arxiv.org/api/query?id_list=2508.10186,2406.07243,2110.08193"
+
+# scenario/claim counts quoted in the protocol and in the paper's §5.5
+uv run python -c "from vigilai.tasks.bbq_brazil.dataset import ALL_SCENARIOS, bbq_brazil_dataset; ..."
+
+# validation
+bash report/build_report.sh
+uv run pytest
+uv run mypy src/vigilai/tasks/bbq_brazil/
+uvx typos
+uv run make default-config && git diff --exit-code config/default_config.yaml
+grep -nE '\[UNVERIFIED\]|TODO|XXX' report/vigilai-brazil-pl2338-compliance.md docs/participation-protocol.md
+grep -nE 'original text|original provision' report/…compliance.md docs/participation-protocol.md README.md
+grep -n '2019 conversion bill' report/vigilai-brazil-pl2338-compliance.md
+```
+
+### Run config
+
+| Model id | `--limit` | `--epochs` | `--temperature` | `--seed` | Other args | Log dir | Wall clock | Approx. cost |
+|---|---|---|---|---|---|---|---|---|
+| n/a — no model was run in this phase | n/a | n/a | n/a | n/a | n/a | n/a | ~1 h | **$0** |
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `docs/participation-protocol.md` | **New.** The composite protocol: helicopter test applied to vigilAI, what would be validated, KoBBQ / SeeGULL / PakBBQ components with the adaptations stated, item review + agreement, tiered outreach and the explicit exclusions, compensation logic + costed budget, non-extractive terms, the open CEP question, and a "what has not happened" section. |
+| `report/vigilai-brazil-pl2338-compliance.md` | New **§5 Positionality, participation, and human rights** (6 subsections); Discussion becomes **§6** with the Art. 6, III gap as its spine and Conclusion **§7**; new provenance limitation; disclaimer extended over the sector mappings and the legislative analysis; abstract, contributions, Author Contributions (positionality), LLM Usage Statement and Future Work updated; **24 new references** (11–34). |
+| `src/vigilai/tasks/bbq_brazil/dataset.py` | **The only `src/` change.** Provenance docstring gains a *racismo algorítmico* grounding section and a "Who wrote this data, and who has not validated it" section pointing at `docs/participation-protocol.md`. |
+| `README.md` | Protocol linked from *Report & media*, from the `bbq_brazil` provenance block and from the rubric-dataset block; native-annotator status restated as **protocol written, not executed**; the "LLM drafting was deliberately not used" sentence corrected (see Deviations). |
+| `pyproject.toml` | One `extend-words` entry (`STIL`) with the reason, plus the recorded decision on the nine vendored `cab/*.json` typos. |
+
+### Verbatim verification — what was checked against primary sources, and what it changed
+
+**The correction the research had wrong, now settled.** `12-research…§Part 1` and the outline both
+say MP 869/2018 restructured Art. 20 "into caput + §1 (transparency) + §2 (ANPD audit)". **It did
+not.** The Câmara *Legin* publicação original of Lei 13.709/2018 shows Art. 20 as enacted on
+14 Aug 2018 already carrying **both paragraphs, word for word as today**:
+
+```
+Art. 20. O titular dos dados tem direito a solicitar revisão, por pessoa natural, de decisões
+tomadas unicamente com base em tratamento automatizado …
+§ 1º O controlador deverá fornecer, sempre que solicitadas, informações claras e adequadas a
+respeito dos critérios e dos procedimentos utilizados para a decisão automatizada, observados
+os segredos comercial e industrial.
+§ 2º Em caso de não oferecimento de informações de que trata o § 1º … a autoridade nacional
+poderá realizar auditoria para verificação de aspectos discriminatórios …
+```
+
+The consolidated Planalto text corroborates it independently: it shows the struck-through 2018
+caput, then the MP 869/2018 caput, then the Lei 13.853/2019 caput — and **§1 and §2 carry no
+`Redação dada` / `Incluído pela` annotation at all**, while §3 carries `(VETADO). (Incluído pela
+Lei nº 13.853, de 2019)`. So MP 869 touched **only the caput** (removing *"por pessoa natural"*),
+and the 2019 conversion added §3. The paper says exactly that.
+
+**Mensagem nº 288, de 8 de julho de 2019** (Planalto, `VEP-288.htm`), verbatim:
+
+> *"decidi vetar parcialmente, por contrariedade ao interesse público e inconstitucionalidade, o
+> Projeto de Lei de Conversão nº 7, de 2019 (MP nº 869/2018)"*
+>
+> *"Ouvidos, os Ministérios da Economia, da Ciência, Tecnologia, Inovações e Comunicações, a
+> Controladoria-Geral da União e o **Banco Central do Brasil** manifestaram-se pelo veto ao
+> seguinte dispositivo: § 3º do art. 20 da Lei nº 13.709, de 14 de agosto de 2018, alterado pelo
+> art. 2º do projeto de lei de conversão"*
+>
+> *"§ 3º A revisão de que trata o caput deste artigo deverá ser realizada por pessoa natural,
+> conforme previsto em regulamentação da autoridade nacional, que levará em consideração a
+> natureza e o porte da entidade ou o volume de operações de tratamento de dados."*
+>
+> Razões do veto: *"…contraria o interesse público, tendo em vista que tal exigência inviabilizará
+> os modelos atuais de planos de negócios de muitas empresas, notadamente das startups, bem como
+> impacta na análise de risco de crédito e de novos modelos de negócios de instituições
+> financeiras, gerando efeito negativo na oferta de crédito aos consumidores… com reflexos, ainda,
+> nos índices de inflação e na condução da política monetária."*
+
+Two precision points the paper now carries. (a) **BACEN did not merely get consulted — it came out
+*for* the veto** (`manifestaram-se pelo veto`), which is stronger than doc 12's "among the
+consulted bodies" and is what the text says. (b) The **message as a whole** invokes public interest
+*and* unconstitutionality; for **this device** the *Razões do veto* invoke only
+*contrariedade ao interesse público*. The paper distinguishes the two, so "economic, not
+constitutional" cannot be read as a claim about the whole message.
+
+**The tally**, verbatim from the Congresso Nacional veto-tracking database (`veto/detalhe/12445`),
+which is the attribution the outline requires (not the session *ata*):
+
+> *"Rejeitado o dispositivo 19.24.001 na Câmara dos Deputados, com o seguinte resultado:
+> Sim – 163; Não – 261; Abst. -1; Total – 425.
+> Mantido o dispositivo 19.24.001 Senado Federal; com o seguinte resultado:
+> Sim – 15; Não – 40; Abst. – 1; Total – 56."*
+
+`Sim` = maintain the veto, so the Câmara's 261 is the overturn vote, clearing the 257 absolute
+majority; the Senate's 40 fell one short of 41. The dispositivos table shows the device's final
+situation as **Mantido**, linked to the *Painel — Sessão de 02/10/2019*. **The veto lists 13
+devices** (24.19.001–013 on the same page), which is why the paper says "the thirteen devices it
+vetoes". Note the page renders the item id **both ways** — `24.19.001` in the dispositivos table,
+`19.24.001` in the tramitação prose; the outline's `24.19.001` matches the table and is what the
+paper cites.
+
+**The abstention count is now corroborated but is still omitted.** The outline says to omit an
+"uncorroborated abstention count"; the primary database in fact records `Abst. – 1` in each house.
+It is left out anyway — it adds nothing to the argument — so the omission is now a **choice**
+rather than a limitation. Recorded here so a later pass does not "restore" it thinking it was lost.
+
+**Lei 12.414/2011 Art. 5, VI** (Planalto), verbatim and **unamended** — LC 166/2019 rewrote items
+I, II, III and V of that article and left VI alone:
+
+> *"VI - solicitar ao consulente a revisão de decisão realizada exclusivamente por meios
+> automatizados; e"*
+
+Review, not human review. This is the **second instance** and the reason the paper's claim is a
+*pattern across two instruments* rather than one statute's accident.
+
+**CFM Resolução nº 2.454/2026** (primary PDF, `sistemas.cfm.org.br`), verbatim:
+
+> Art. 14, parágrafo único: *"As soluções apresentadas pelos modelos, sistemas e aplicações de IA
+> não são soberanas, sendo obrigatória a supervisão humana."*
+> Art. 23: *"Esta resolução entra em vigor após decorridos 180 (cento e oitenta) dias da data de
+> sua publicação."*
+
+**Citation traps, both cleared.** Reference 20 is **Rachel Adams**, *Can Artificial Intelligence
+Be Decolonized?*, Interdisciplinary Science Reviews 46(1–2), 2021 — **not** Ricaurte, who is
+reference 17 for a different paper in a different journal. And **no CERD Committee paragraph is
+cited anywhere**, and no AI/algorithms finding is attributed to the Committee; §5.3 says in the
+paper's own voice that the step from ICERD Art. 1 to facial recognition "is **our own argument**".
+
+**Author/venue metadata re-checked against the arXiv API** for every protocol and participation
+citation, because five of them are load-bearing: Sloane / Moss / Awomolo / Forlano (2007.02423),
+Birhane / Isaac / Prabhakaran / Díaz (2209.07572), Jha / Davani / Reddy / Dave — SeeGULL
+(2305.11840), Jin / Kim / Lee / Yoo — KoBBQ (2307.16778), Hashmat / Mirza / Raza — PakBBQ
+(2508.10186), Neplenbroek / Bisazza / Fernández — MBBQ (2406.07243), Parrish et al. — BBQ
+(2110.08193). Reference 6 previously dated PakBBQ to 2024; it is **EMNLP 2025**, now fixed.
+
+**CNS Res. 738 — dated carefully, because the widely-indexed date is wrong.** The republished text
+carries the header *"RESOLUÇÃO Nº 738, DE 7 DE NOVEMBRO DE 2024 (*)"* while its own homologation
+clause reads *"Homologo a Resolução CNS nº 738, **de 01 de fevereiro de 2024**"*, and the
+republication note says it ran in *"Diário Oficial da União nº 14, de 21 de janeiro de 2025, Seção
+1, página 114, com incorreções no original."* §8 of the protocol states all three rather than
+picking one, and tells a reader to check the homologation clause rather than an aggregator.
+
+### Automated verification
+
+- [x] `bash report/build_report.sh` — builds `vigilai-brazil-pl2338-compliance_paper.pdf`
+      (**902,089 bytes, 22 pages**, dossier appended as Appendix B). **Zero pandoc/xelatex
+      warnings** after a fix described under Deviations: the first build emitted
+      `Missing character: There is no ≈ (U+2248) in font [lmroman10-regular]` ×3 — the glyph was
+      silently dropped from the PDF, so all three were reworded to "about".
+- [x] **No `[UNVERIFIED]`, `TODO` or `XXX`** in `report/vigilai-brazil-pl2338-compliance.md` or
+      `docs/participation-protocol.md` — `grep -nE` returns nothing, exit 1.
+- [x] **The corrected-away phrasing is absent** — `grep -nE 'original text|original provision'`
+      over the paper, the protocol *and* `README.md` returns nothing, exit 1. **"2019 conversion
+      bill" is present**, twice (Introduction line 66, Discussion line 480).
+- [x] `uv run pytest` — **781 passed**, unchanged from Phase 7, no API key, no network call.
+- [x] `uv run mypy src/vigilai/tasks/bbq_brazil/` — `Success: no issues found in 5 source files`.
+- [x] `uv run make default-config` — **no diff**; no task signature changed.
+- [x] `uvx typos` — **9 errors, the unchanged pre-existing baseline**, all in vendored
+      `src/vigilai/tasks/cab/*.json`. The two new false positives this phase introduced were both
+      handled: the abbreviated form of *PLOS Computational Biology* removed by spelling the
+      journal out, and `STIL` — the Brazilian NLP symposium's acronym, which has no alternative
+      spelling — added to `extend-words` with its reason. **Zero new errors.**
+- [x] Every `[n]` citation in the paper resolves to a defined reference and every reference is
+      cited — checked programmatically over the rendered reference list (34 defined, 34 used).
+
+### Deviations from the structure outline
+
+1. **`uvx typos` is NOT clean, and this is a deliberate, recorded decision rather than a miss.**
+   The outline's Phase 10 validation asks for "clean, or new pt-BR terms added … with a comment",
+   and `pyproject.toml`'s own comment (written in Phase 2) says the nine vendored `cab/*.json`
+   typos "should be fixed in place … when Phase 10 makes `uvx typos` clean". **They were not
+   fixed, and should be a separate decision.** Reasons, now written into `pyproject.toml`: they
+   are **benchmark data vendored verbatim from upstream COMPL-AI**, not prose, so editing them
+   (a) diverges this fork from upstream in exactly the files the planned upstream PR (docs 06-08)
+   would have to reconcile, and (b) changes a grader prompt and two JSON schema *descriptions*
+   that the `cab` task feeds to a model — a scoring-surface change wearing a spelling fix's
+   clothes. It also has to be taken together with the alternative of adding
+   `src/vigilai/tasks/cab/` to `files.extend-exclude` as vendored data. Phase 10 is a framing
+   phase whose brief is one docstring in `src/`; silently editing four vendored data files under
+   it would be the wrong place to make that call. **The invariant that still holds: 9 errors, all
+   pre-existing, all in `cab/*.json`; any tenth is a regression.**
+2. **The allowlist entry went to `extend-words`, not `extend-ignore-identifiers-re`** as the
+   outline's checkbox words it. That follows the repo's own established convention and the
+   reasoning already recorded in `pyproject.toml` — `extend-ignore-identifiers-re` is empty by
+   design there, because a pattern broad enough to cover pt-BR prose also hides real English
+   typos, and word-to-itself entries are narrower.
+3. **`README.md`'s "LLM drafting was deliberately not used" sentence was corrected, not merely
+   extended.** It is the same claim the `dataset.py` docstring made, and it is **misleading as a
+   provenance statement**: no LLM call sits in the *generation pipeline* (true, and enforced by a
+   byte-identical drift guard), but the term banks, the 30 templates and the 22 hand-authored
+   pilot scenarios were drafted by Claude. Phase 10 exists to apply the helicopter-research test
+   honestly; leaving a sentence standing that a reader would take as "no LLM wrote this content"
+   would have made §5.5 contradict the repository it describes. Both sites now draw the
+   distinction explicitly: **reproducibility property, not a provenance one.**
+4. **Four stale figures in the paper were corrected even though the paper's numbers are Phase
+   11's job**, because §5's self-audit cannot be honest and simultaneously contradict the Methods
+   table: the `bbq_brazil` Methods row (44 → 100 scenarios / 400 samples), the dataset-scale
+   limitation (44 / 3 / 4 / 1 → 100 / 12 / 12 / 12, with the non-independence caveat), the test
+   count in the LLM Usage Statement (173 → 781), and one Results sentence reattributed from "the
+   deepened 44-scenario set" to "iteration 1's 44-sample set" — **that last one changes no
+   number**, it just stops an iteration-1 result reading as a description of the current dataset.
+   **No result value was touched.**
+5. **The Tier-1/2/3 organization names are in the protocol but deliberately NOT in the paper.**
+   The protocol itself argues that listing an organization next to a methodology it did not
+   review is a form of participation-washing; printing five named Brazilian organizations in a
+   published paper none of them has seen would commit the error the section is about. §5.6
+   describes the tiers by *kind* and states that none has been approached.
+6. **The paper says "no community validation", not "protocol plus first contact".** The design
+   discussion's Resolved Q7 anticipated iteration 2 delivering "the protocol plus first contact",
+   and the outline's manual check asks to confirm outreach status. **Nothing in this repository
+   records any outreach**, and this session had no way to verify whether any occurred outside it.
+   The formulation chosen is true either way — first contact is not validation — and the protocol
+   carries an explicit slot (§9) that must be filled with who / when / on what terms before any
+   outreach claim appears in the paper. **See *What is left for a human*.**
+
+### Notes / gotchas for the next session
+
+- **`≈` (U+2248) is not in the paper's PDF font.** `lmroman10-regular` has no glyph for it, and
+  xelatex drops it **silently apart from a warning** — the character simply vanishes from the
+  output. Write "about" or "~". Worth grepping the paper for other exotic glyphs before Phase 11's
+  final build; `–`, `—`, `±`, `§`, `º`, `→` and all the accented pt-BR characters render fine.
+- **Planalto works from `curl` with a browser User-Agent.** Doc 12 records `ECONNRESET` on every
+  attempt and routes everything through Câmara/Congresso mirrors. On 2026-07-26 both
+  `planalto.gov.br` documents fetched cleanly with
+  `-A "Mozilla/5.0 … Chrome/126.0 Safari/537.36"` (and `-L`, since VEP-288 301-redirects). Phase 11
+  can therefore verify against the canonical texts rather than mirrors.
+- **The paper is now §1–§7**, not §1–§6. Anything cross-referencing "Section 5 (Discussion)" from
+  an earlier artifact is off by one.
+- **Phase 11 punch list — stale statements this phase deliberately left alone**, all in Methods
+  §3 and Appendix A, all owned by "final assembly":
+  - Methods design-choice (2) still reads *"deterministic … rubric scorers, **no LLM judge**"*.
+    Phase 6 added an optional judge as a **second** scorer; the sentence needs one clause.
+  - Methods design-choice (2) also says *"cue lists were tuned against real model output"* —
+    true, and it is exactly what Resolution 8 showed produced a 0.5 score floor. Reword or drop.
+  - Methods "Models and configurations" and every Results figure are iteration-1 runs.
+  - Appendix A's *"Scaled standard errors"* bullet is the **hand-compiled** table Phase 1 retired;
+    replace with tool output.
+  - `reports/RESULTS.md` is referenced as the source of standard errors; Phase 1 superseded that.
+- **`docs/participation-protocol.md` is written to be sent to an outside organization**, not only
+  to be cited. That is why it carries the budget arithmetic and the "what has not happened"
+  section: the Future Work step is to put *this document* in front of a Tier-1 organization and
+  ask whether the protocol is the right shape, before asking anyone to execute it.
+- **Do not soften §5.5.** Every sentence in it is checkable against the repository, and its value
+  is precisely that it is unflattering. A reviewer who verifies one claim and finds it hedged will
+  discount the rest of the paper.
+
+### What is left for a human
+
+- [ ] **Read §5 and confirm it states plainly what has *not* happened** — and specifically that no
+      claim of completed community validation appears anywhere in the paper. (Automated half: the
+      strings "no community validation", "has validated any item" and the §5.6 disclaimer are in
+      the built PDF; the judgment about tone is not automatable.)
+- [ ] **Confirm the outreach status.** This is the one item this session could not verify at all.
+      The paper and the protocol both assert only that **no Brazilian has validated any item**,
+      which is true whether or not first contact happened. If contact **has** occurred, fill
+      §9 of `docs/participation-protocol.md` with who, when, through which channel, what was asked
+      and on what terms — and only then may an outreach sentence enter the paper. If it has not,
+      nothing needs changing.
+- [ ] **Re-verify the LGPD Art. 20 drafting history and the ANPD citation once more before print**
+      (the outline's own manual check). The drafting history was verified this session against
+      Planalto *and* Câmara *Legin* and is recorded verbatim above; the **ANPD note is
+      `Nota Técnica nº 12/2025/CON1/CGN/ANPD`**, and `nº 23/2025` is a different document about
+      biometric data — that citation does **not** currently appear in the paper, so the check is
+      only live if Phase 11 adds it.
+- [ ] **Decide the nine vendored `cab/*.json` typos** (Deviation 1): fix in place, or exclude
+      `src/vigilai/tasks/cab/` as vendored data, or keep the visible baseline. Whichever way, it
+      wants its own commit and its own line in the upstreaming plan.

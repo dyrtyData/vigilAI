@@ -24,6 +24,7 @@ This project was built for the [**Global South AI Safety Hackathon**](https://ap
 - 🎬 **Video overview** (NotebookLM): <https://notebooklm.google.com/notebook/e885d8db-b69a-4395-abdf-f0de618965e8/artifact/338c5582-a26a-41c6-9a76-5e16dea4390c?utm_source=nlm_web_share&utm_medium=google_oo&utm_campaign=art_share_1>
 - 🖼️ **Infographic:** [`report/Brazil_AI_Compliance_Audit_Results_infographic.png`](report/Brazil_AI_Compliance_Audit_Results_infographic.png)
 - 📊 **Slides:** [`report/Certification_is_Jurisdictional_slidedeck.pdf`](report/Certification_is_Jurisdictional_slidedeck.pdf)
+- 🤝 **Participation protocol:** [`docs/participation-protocol.md`](docs/participation-protocol.md) — the native-annotator validation protocol for `bbq_brazil` (KoBBQ + SeeGULL + PakBBQ composite), the compensation logic and costed budget, the tiered outreach list, the open CEP question, and the helicopter-research test applied to this project. **Written; not executed** — no Brazilian has validated any item, and the repository makes no claim of completed community validation.
 
 *The video is hosted on NotebookLM (not committed, to keep the repo lightweight); the infographic and slides were generated with NotebookLM from the report and committed here.*
 
@@ -174,13 +175,26 @@ deliberately *not* runtime data sources:
 stereotypes; license-gated) and
 [ToxSyn-PT](https://huggingface.co/datasets/ToxSyn/ToxSyn-PT) (CC BY 4.0; classification
 format). Other Brazilian hate-speech corpora (HateBR, ToLD-BR, OLID-BR) are classification,
-not QA, and use coarse race labels — noted as future-work resources only. LLM drafting was
-deliberately **not** used: LLM-written bias probes graded by LLMs would introduce exactly the
-circularity this benchmark exists to avoid.
+not QA, and use coarse race labels — noted as future-work resources only.
+
+*Why these axes.* The five axes are Brazilian because the harm is theorized in Brazil as
+**racismo algorítmico** — Tarcízio Silva, *Racismo Algorítmico* (Edições Sesc, 2022), for whom
+"o racismo algorítmico é uma espécie de atualização do racismo estrutural" — with the 2024
+IRIS-BH / Silva / Ação Educativa report on AI and racial discrimination in Brazil as the
+companion source. The `Religion` axis exists only because of that grounding: *racismo religioso*
+is a Brazilian term of art, and no US-derived taxonomy produces the axis at all.
+
+*Who wrote it.* **No LLM call sits in the generation pipeline** — the expansion from templates
+to `generated.py` is deterministic, seeded and byte-reproducible, with a drift guard enforcing
+it. **That is a reproducibility property, not a provenance one.** The term banks, the 30
+templates and the 22 hand-authored pilot scenarios were **drafted by a language model** (Claude,
+via Claude Code) under the authors' direction from the secondary sources above. **No Brazilian
+wrote a scenario**, and the only review to date has also been by language models (below).
 
 **Generation is not validation.** Templating raises n and balance; it does not make the
 stereotypes community-validated. **Full native-annotator validation remains pending** — the
-written protocol is upcoming work, and the automated checks cover only mechanical quality (no
+written protocol is [`docs/participation-protocol.md`](docs/participation-protocol.md), and it
+has **not been executed**; the automated checks cover only mechanical quality (no
 unreplaced placeholders, no duplicate scenarios or prompts, terms confined to their own
 category's bank, pt-BR contractions and gender agreement, a balanced canonical answer slot, the
 disambiguating sentence naming **both** people verbatim — each is the gold answer under one of the
@@ -242,6 +256,21 @@ community validation may be made anywhere on the strength of this repository. An
 Portuguese is not a Brazilian reading Portuguese, and whether these questions read as something a
 Brazilian would *say*, about a prejudice a Brazilian would *recognise*, is the one item-level
 judgment only a native speaker can rule on.
+
+**The protocol that would close it is written, and has not been run.**
+[`docs/participation-protocol.md`](docs/participation-protocol.md) composes three published
+BBQ-family protocols — **KoBBQ**'s quantitative core (defined N per item, demographic balancing,
+a >2/3 validity threshold, a comprehension check, and reporting how many items were eliminated),
+**SeeGULL**'s qualification rule (lived membership validates *that* category — a nordestino
+stereotype is validated by nordestinos), and **PakBBQ**'s transparency and duty of care (named
+annotators, a regional-diversity quota, a harm-exposure briefing *before* annotation begins, and
+a removal power the researchers cannot overrule) — and adds the compensation logic (one rate for
+every participant regardless of country, fees borne by the project, briefing paid, stopping
+early costs nothing), the costed budget, the tiered outreach list, and the open CEP /
+Resolução CNS nº 510/2016 question. It also applies the **helicopter-research test to this
+project by name**: who conceived the categories, who wrote the items, who validated them, who is
+a co-author. The honest status is **protocol written; not executed** — no Brazilian annotator and
+no Brazilian organization has validated any item, and none has reviewed the protocol either.
 
 Each review round also wrote its replacement wordings **after** its judges finished, so those
 replacements inherited none of the review that produced them.
@@ -350,7 +379,9 @@ directly instead of impressionistically. The judgment: whether the Portuguese an
 register read as Brazilian-authored, whether the health-plan and consumer-finance vocabulary is
 right, whether each span really licenses its element, and whether the reference answer is something
 a compliant institution would actually send. As with `bbq_brazil`, **no native-speaker or community
-validation has happened**.
+validation has happened**; the rubric scenarios are in the secondary scope of
+[`docs/participation-protocol.md`](docs/participation-protocol.md) — pt-BR register and domain
+vocabulary only, since their rubrics come from statute rather than from a social judgment.
 
 **A scorer defect found by the LLM-judge review, and fixed — iteration 1's
 `contestation_review` figures are superseded.** Both rubric scorers matched their content cues by

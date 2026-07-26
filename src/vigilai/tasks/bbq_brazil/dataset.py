@@ -52,13 +52,54 @@ Provenance (design discussion §4 and Resolved Q3):
 * **Per-scenario provenance is recorded in the data itself** (``BrazilBBQScenario.provenance``):
   hand-authored rows keep the pilot marker, generated rows carry their template key, term-bank
   pair key, answer-slot assignment, and research anchor.
+
+Why these axes and not a translated US taxonomy — *racismo algorítmico*
+-----------------------------------------------------------------------
+
+The five axes are Brazilian because the harm they measure is theorized in Brazil as
+**racismo algorítmico** — Tarcízio Silva, *Racismo Algorítmico: Inteligência Artificial e
+Discriminação nas Redes Digitais* (Edições Sesc, 2022; https://racismo-algoritmico.pubpub.org/),
+for whom *"o racismo algorítmico é uma espécie de atualização do racismo estrutural"*. That
+framing treats algorithmic harm as continuous with an existing structure rather than as a model
+defect, which is why PL 2338 places non-discrimination among the **rights of affected persons**
+(Art. 5, III) rather than among model-quality requirements, and why this dataset is keyed to the
+categories Brazilian anti-discrimination practice actually uses. The 2024 IRIS-BH / Tarcízio
+Silva / Ação Educativa report *Artificial Intelligence and Racial Discrimination in Brazil* is
+the companion source. The ``Religion`` axis exists only because of this grounding: *racismo
+religioso* is a Brazilian term of art covering communities that are ~1% of the population and
+50-65% of recorded religious-intolerance victims, and no US-derived taxonomy produces it. Under
+**LGPD Art. 5º, II**, two of the five axes (racial/ethnic origin, religious conviction) are
+*sensitive personal data* — which constrains the participation protocol below far more than it
+constrains this file, whose scenarios are synthetic and describe no real person.
+
+Who wrote this data, and who has not validated it
+-------------------------------------------------
+
 * **Generation is not validation.** Templating raises n and balance; it is *not* community
-  validation of the stereotypes. **Full native-annotator validation remains pending** — the
-  written protocol (KoBBQ's quantitative core, SeeGULL's in-region qualification rule,
-  PakBBQ's transparency and duty of care) is Phase 10 work, and
-  ``docs/bbq-brazil-generated-spot-check.md`` is the reviewer sheet for the pt-BR spot-check.
-  LLM drafting was deliberately **not** used: LLM-written bias probes graded by LLMs would
-  introduce a circularity this benchmark exists to avoid.
+  validation of the stereotypes. **Full native-annotator validation remains pending.**
+  The written protocol is committed at ``docs/participation-protocol.md`` — KoBBQ's
+  quantitative core (defined N per item, demographic balancing, a >2/3 validity threshold, a
+  comprehension check, and reporting how many items were eliminated), SeeGULL's qualification
+  rule (lived membership of the category validates *that* category — a nordestino stereotype is
+  validated by nordestinos), and PakBBQ's transparency and duty of care (named annotators, a
+  regional-diversity quota, a harm-exposure briefing *before* annotation begins, and a removal
+  power the researchers cannot overrule). ``docs/bbq-brazil-generated-spot-check.md`` is the
+  reviewer sheet for the pt-BR spot-check.
+* **No LLM call sits in the generation pipeline** — the expansion from templates to
+  ``generated.py`` is deterministic, seeded, and byte-reproducible, and a drift guard enforces
+  it. **That is a reproducibility property, not a provenance one, and it must not be read as
+  one.** The term banks, the 30 scenario templates and the 22 hand-authored pilot scenarios were
+  **drafted by a language model** (Claude, via Claude Code) under the authors' direction, from
+  the secondary sources named above. **No Brazilian wrote a scenario in this file.**
+* **The only review to date has also been by language models** — five rounds of LLM-judge
+  review over these 100 scenarios, recorded in ``docs/bbq-brazil-llm-judge-review.md`` (with
+  ``docs/bbq-brazil-unreviewed-wordings.md`` enumerating the replacement wordings that reached
+  no judge). Every one of those documents opens by stating it is a **pre-screen, not native-
+  speaker or community validation**, and no claim of completed community validation may be made
+  anywhere on the strength of them. Their value is narrower and real: they caught defects no
+  lint could — items that measured backwards, one keyed to its own biased answer, a template
+  pointed at an axis no Brazilian prejudice occupies — so a paid annotator's hour goes on
+  judgment rather than on finding broken items.
 
 **No held-out slice.** Every scenario carries ``held_out=False`` and every sample is stamped
 ``metadata["split"] = "train"``; all 400 samples run in the headline. The held-out rationale is
