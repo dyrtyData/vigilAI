@@ -56,8 +56,47 @@ verbatim from `vigilai report <log_dir>`; the per-model reports live in
 > instances of the same class — on equivalent hostile probes it scored **2/6** in pt-BR (*de forma
 > **criterio**sa*, *a **data** do pedido*) and **1/6** in English (*Sincerely,*), both now **0/6**.
 > Its iteration-1 figures (0.778–0.894) are therefore **also affected, though less severely**, and
-> are superseded on the same basis. `bbq_brazil`, `human_deception_brazil` and `aia_checklist` are
-> **unaffected** — none uses these detectors.
+> are superseded on the same basis. `bbq_brazil` and `human_deception_brazil` are **unaffected** —
+> neither uses these detectors. **`aia_checklist` is superseded too, for its own separate and
+> worse reasons — see the next notice.**
+
+> ### ⚠️ SUPERSEDED: every `aia_checklist` figure on this page
+>
+> **Do not cite the `aia_checklist` numbers below** (0.917 / 0.950 / 0.983 / the four local 1.00s).
+> Three independent defects were found on 2026-07-25 by the iteration-2 Phase 4 sector work, and
+> together they mean the figures do not measure what the page says they measure.
+>
+> 1. **n=1.** Every iteration-1 `aia_checklist` score is **one sample** — one prompt, one
+>    completion. The scaled frontier runs are n=1 as well; only the epoch count differs. A single
+>    observation has no standard error (Inspect's `stderr()` returns a placeholder `0` below two
+>    observations), so `0.983` is a point with no interval, not a precise score. This was already
+>    stated in the caveats; it is restated here because it is half of the reason the number is
+>    void. Iteration 2 takes the task to **4 samples** (Phase 4, finance) and **12** (Phase 5).
+> 2. **The prompt-echo floor was 0.944.** The prompt was generated from the checklist, rendering
+>    every applicable item's `description` as a bullet in pt-BR and English. A description cannot
+>    state its obligation without using the obligation's vocabulary, so **the rendered prompt,
+>    scored against its own scorer, covers 17 of 18 items — 0.9444**. The task was measuring
+>    whether a model can restate a list it was just handed. **Iteration 1's 0.983 is essentially
+>    that floor**: 0.944 of it is the prompt coming back, and the four local `1.00`s are one
+>    observation apiece on top of it. Fixed in iteration 2 by a `prompt_mode` pair — an
+>    **`unguided`** default whose measured echo floor is **0.0000**, and the old **`guided`** frame
+>    preserved verbatim at 0.9444 so the floor stays measurable and one condition stays comparable
+>    to these numbers. Both floors are pinned by tests.
+> 3. **The cue lists scored a content-free hostile non-answer 6/6 = 1.000.** Boilerplate with no
+>    AIA content whatsoever — *"as informações **constantes** do relatório"*, *"o **segredo**
+>    industrial da empresa é protegido"*, *"cumprimos a **LGPD**"*, *"o **operador** de telefonia"* —
+>    matched every one of the six cross-sector items. `aia_checklist` did not have a floor of 0.5
+>    like `contestation_review`; **it had a floor of 1.0.** Two defect classes were involved:
+>    substring matching inside unrelated words (closed by the same word-boundary fix), and whole
+>    words simply too general for their obligation (closed by a conjunct or removal per site), plus
+>    the *publicidade* homograph — *advertising* in pt-BR — removed outright. The hostile probe now
+>    scores **0.000** and both full-coverage reference answers still score 1.0.
+>
+> **The numbers are kept, not deleted**, on the same reasoning as the `contestation_review` notice:
+> the provenance of the published figures is part of the record and the paper's Methods section has
+> to be able to say what changed. Replacement figures come from the iteration-2 Phase 8/9 re-runs,
+> which run **both prompt conditions** — the guided↔unguided delta is itself a reported result,
+> because it separates knowledge of Brazilian AIA obligations from restatement of a supplied list.
 
 ---
 
@@ -164,18 +203,21 @@ Ollama at zero cost (pilot config):
 Higher = more compliant. Δ = Brazil − EU (negative = *less* compliant on Brazil-specific content).
 `bbq_brazil` here is the **original 20-sample** pilot set.
 
-| Model | `human_deception` (EU) | `human_deception_brazil` | **Δ disclosure** | `bbq` (EU) | `bbq_brazil`@20 | **Δ bias** | `explanation_quality` | `aia_checklist` |
+| Model | `human_deception` (EU) | `human_deception_brazil` | **Δ disclosure** | `bbq` (EU) | `bbq_brazil`@20 | **Δ bias** | `explanation_quality` | `aia_checklist` ⚠️ |
 |---|---|---|---|---|---|---|---|---|
-| **Haiku 4.5** (scaled) | 0.997 | 0.524 | **−0.47** | 0.858 | 0.700 | **−0.16** | 0.894 | 0.917 |
-| **Sonnet 4.6** (scaled) | 1.000 | 0.524 | **−0.48** | 0.498 ⚠️ | 0.375 | **−0.12** | 0.850 | 0.950 |
-| Llama 3.1 8B (pilot) | 1.00 | 0.50 | −0.50 | 0.55 | 0.45 | −0.10 | 0.778 | 1.00† |
-| gpt-oss 20B (pilot) | 1.00 | 0.55 | −0.45 | 0.70 | 0.70 | 0.00 | 0.833 | 1.00† |
-| Qwen2.5 14B (pilot) | 1.00 | 0.55 | −0.45 | 0.70 | 0.60 | −0.10 | 0.778 | 1.00† |
-| Mistral Small (pilot) | 0.95 | 0.55 | −0.40 | 0.60 | 0.65 | +0.05 | 0.778 | 1.00† |
+| **Haiku 4.5** (scaled) | 0.997 | 0.524 | **−0.47** | 0.858 | 0.700 | **−0.16** | 0.894 | ~~0.917~~ † |
+| **Sonnet 4.6** (scaled) | 1.000 | 0.524 | **−0.48** | 0.498 ⚠️ | 0.375 | **−0.12** | 0.850 | ~~0.950~~ † |
+| Llama 3.1 8B (pilot) | 1.00 | 0.50 | −0.50 | 0.55 | 0.45 | −0.10 | 0.778 | ~~1.00~~ † |
+| gpt-oss 20B (pilot) | 1.00 | 0.55 | −0.45 | 0.70 | 0.70 | 0.00 | 0.833 | ~~1.00~~ † |
+| Qwen2.5 14B (pilot) | 1.00 | 0.55 | −0.45 | 0.70 | 0.60 | −0.10 | 0.778 | ~~1.00~~ † |
+| Mistral Small (pilot) | 0.95 | 0.55 | −0.40 | 0.60 | 0.65 | +0.05 | 0.778 | ~~1.00~~ † |
 
-⚠️ Sonnet `bbq` is anomalous — see [caveats](#caveats--limitations). † Local `aia_checklist` is a
-**single scenario at 1 epoch** (n=1) — treat the 1.00s as one observation, not a precise score;
-the reliable AIA numbers are the scaled 0.917 / 0.950.
+⚠️ Sonnet `bbq` is anomalous — see [caveats](#caveats--limitations).
+† **The whole `aia_checklist` column is superseded** — see the notice at the top of this page. Every
+cell is **one sample** (n=1, scaled and pilot alike), under a prompt whose **own echo floor was
+0.944**, scored by cue lists that credited a content-free non-answer **6/6 = 1.000**. The scaled
+0.917 / 0.950 are not "the reliable AIA numbers"; there are none on this page. Replacements come
+from the iteration-2 re-runs, in both prompt conditions.
 
 ---
 
@@ -234,8 +276,12 @@ Verbatim from `uv run vigilai report logs/<haiku-complete-run>` — the coherent
 | Art. 5, I | `human_deception_brazil` | 0.524 |
 | Art. 5, III | `bbq_brazil` (44) | 0.677 |
 | Art. 6, I | `explanation_quality` | 0.833 |
-| Art. 6, II-III | `contestation_review` ⚠️ superseded | 0.975 |
-| Arts. 25-28 | `aia_checklist` | 0.983 |
+| Art. 6, II-III | `contestation_review` ⚠️ superseded | ~~0.975~~ |
+| Arts. 25-28 | `aia_checklist` ⚠️ superseded | ~~0.983~~ ‡ |
+
+‡ **0.983 is the prompt-echo floor, not a score.** The guided prompt scores **0.9444** against its
+own scorer, so 17 of the 18 credited items were the prompt coming back; and this is n=1. See the
+supersession notice at the top.
 
 EU↔Brazil side-by-side (same scorer): disclosure 0.524 vs 1.000 (**Δ −0.476**); bias 0.677 vs
 0.858 (**Δ −0.181**). `explanation_quality` / `contestation_review` / `aia_checklist` = no EU
@@ -250,12 +296,15 @@ equivalent.
 | `bbq` (EU, Art. 5, III) | 0.858 ± 0.034 | 0.498 ± 0.044 ⚠️ |
 | `bbq_brazil`@44 (Art. 5, III) | 0.677 ± 0.070 | 0.402 ± 0.056 |
 | `explanation_quality` (Art. 6, I) | 0.833–0.894 ‡ | 0.850 ± 0.025 |
-| `contestation_review` (Art. 6, II-III) ⚠️ superseded | 0.975 ± 0.023 | 0.988 ± 0.013 |
-| `aia_checklist` (Arts. 25-28) | 0.917–0.983 ‡ | 0.950 |
+| `contestation_review` (Art. 6, II-III) ⚠️ superseded | ~~0.975 ± 0.023~~ | ~~0.988 ± 0.013~~ |
+| `aia_checklist` (Arts. 25-28) ⚠️ superseded | ~~0.917–0.983~~ ‡ | ~~0.950~~ ‡ |
 
 ‡ Haiku's `explanation_quality` (n=3) / `aia_checklist` (n=1) vary run-to-run on these tiny sets
 (Batch A 0.894 / 0.917; coherent Batch-B run 0.833 / 0.983) — the spread is the small-n noise, not
-a real change. The EU `human_deception` side is essentially zero-variance, so the disclosure gap is
+a real change. **For `aia_checklist` the small-n noise is not the main problem**: the numbers sit on
+a **0.944 prompt-echo floor** and were produced by cue lists with a hostile-probe floor of 1.000, so
+the run-to-run spread is variation in how much of the prompt a single completion echoed back. The
+row carries no `± se` for the same reason it has no interval: n=1. The EU `human_deception` side is essentially zero-variance, so the disclosure gap is
 unambiguous. Brazilian-set standard errors stay wide because those sets have few unique questions —
 epochs cut within-question variance, not between-question variance.
 
@@ -310,7 +359,16 @@ of a Global-South compliance gap — an argument for purpose-built evaluation.
 - **Local "pilot" precision.** Local runs use the full small sets at 1 epoch: disclosure and bias
   are meaningful directionally; `explanation_quality` (n=3), `contestation_review` (n=4) and
   especially `aia_checklist` (n=1) are low-n — the local 1.00s are one or few observations, not
-  precise scores. The scaled frontier runs are the reliable numbers.
+  precise scores. The scaled frontier runs are the reliable numbers **except for
+  `aia_checklist`, where scaling changed nothing that mattered**: the scaled runs are n=1 too, so
+  the whole column is one observation per model regardless of config.
+- **`aia_checklist` measured restatement, not knowledge — ⚠️ the whole benchmark is superseded.**
+  Its prompt was generated from the checklist and listed every item's description, so the rendered
+  prompt scored **0.9444** against its own scorer: 17 of 18 items were credited to the prompt
+  itself. A score of 0.983 on that frame is the floor plus one item. Iteration 2 splits the task
+  into an **`unguided`** condition (legal basis stated, obligations not enumerated; measured echo
+  floor **0.0000**) and the preserved **`guided`** condition, and reports both — the delta is how
+  much of a score is knowledge and how much is restatement. See the notice at the top of this page.
 - **Run-to-run variance on tiny sets.** `contestation_review` (n=4) moved 0.50 → 0.71 → 0.975
   across Llama/Haiku runs; the few-shot-guided frontier scores (0.97–0.99) are stable, the small-n
   local single-epoch points are not. **⚠️ And all of them are superseded** — see the scorer-defect
@@ -323,7 +381,16 @@ of a Global-South compliance gap — an argument for purpose-built evaluation.
   without anyone noticing for a whole iteration. The class is now closed structurally (word-bounded
   matching) and pinned by regression tests, but the general caution stands and is why iteration 2
   adds an LLM-judge cross-check: a keyword scorer's failure mode is *silent inflation*, and it does
-  not show up in the standard error.
+  not show up in the standard error. **`aia_checklist`'s detector was the worst instance in the
+  repo** and was swept in the same pass: a content-free boilerplate non-answer scored **6/6 =
+  1.000** there, so that benchmark's floor was not 0.5 but **1.0**. Two classes were involved —
+  substring-inside-a-word, and whole words simply too general for their obligation (`"segredo"`,
+  `"provider"`, a bare `"lgpd"`) — plus the *publicidade* homograph, removed outright. Now 0.000.
+- **A prompt can leak its own answer key, and a standard error will never show it.** The sibling
+  risk to cue breadth, and `aia_checklist` had it: because the prompt was built from the checklist,
+  the benchmark's floor was set by its own instructions. It is worth stating as a general caution
+  for any "does the model know what X requires?" benchmark whose prompt enumerates X. The check is
+  one line — score the rendered prompt against your own scorer — and it is now a test here.
 - **Sonnet `bbq` anomaly — INVESTIGATED.** Sonnet's EU `bbq` (0.498) is far below Haiku's
   (0.858). Breaking it down by context condition: **ambiguous 0.436** (Sonnet picks a *named
   person* ~56% of the time instead of "cannot be determined"), **disambiguated 0.560**. The

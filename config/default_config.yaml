@@ -9,6 +9,11 @@
 
 
 
+aia_checklist:
+  sector: null
+  split: all
+  prompt_mode: unguided
+
 aime_2025:
   num_epochs: 4
 

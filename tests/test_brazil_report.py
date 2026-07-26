@@ -38,6 +38,7 @@ from inspect_ai.dataset import MemoryDataset
 from inspect_ai.dataset import Sample
 from inspect_ai.model import get_model
 from inspect_ai.model import ModelOutput
+from inspect_ai.scorer import grouped
 from inspect_ai.scorer import match
 from inspect_ai.scorer import mean
 from inspect_ai.scorer import scorer
@@ -45,6 +46,7 @@ from inspect_ai.scorer import Score
 from inspect_ai.scorer import stderr
 from inspect_ai.solver import generate
 
+from vigilai.report.brazil_report import _sector_metrics
 from vigilai.report.brazil_report import _stderr_metric
 from vigilai.report.brazil_report import ArticleGroup
 from vigilai.report.brazil_report import build_brazil_report
@@ -1253,3 +1255,352 @@ class TestStandardErrors:
         assert "href=" not in doc
         assert "http://" not in doc
         assert "https://" not in doc
+
+
+# ---------------------------------------------------------------------------------------
+# Phase 4 — the sector overlay.
+#
+# ``aia_checklist`` declares Inspect ``grouped()`` metrics on each sample's
+# ``metadata["sector"]``, which Inspect flattens into ``mean_<sector>`` / ``stderr_<sector>``
+# entries in the log header. The fixture below reproduces that shape with a *fixture* task
+# rather than the real one, so these tests exercise the report's parsing and aggregation and
+# stay green if the real checklist's item set changes. The **real** key names are pinned
+# separately, against a real ``aia_checklist`` log, in
+# ``tests/test_aia_checklist.py::TestGroupedMetricKeys``.
+# ---------------------------------------------------------------------------------------
+_GAP_ITEMS_FIXTURE = "human_review_gap_lgpd20,ai_interaction_disclosure_gap"
+
+# Hand-computable expectations for the two fixture sectors.
+_SECTOR_FIN_MEAN = 0.75
+_SECTOR_FIN_SE = statistics.stdev([1.0, 1.0, 1.0, 0.0]) / math.sqrt(4)  # 0.250000
+_SECTOR_HEA_MEAN = 0.5
+_SECTOR_HEA_SE = statistics.stdev([1.0, 0.0, 1.0, 0.0]) / math.sqrt(4)  # 0.288675
+
+
+@scorer(
+    metrics=[
+        mean(),
+        stderr(),
+        grouped(mean(), "sector", all=False, name_template="mean_{group_name}"),
+        grouped(stderr(), "sector", all=False, name_template="stderr_{group_name}"),
+    ]
+)
+def _sector_fraction_scorer():
+    """A fraction scorer declaring the same metric quartet ``aia_checklist_scorer`` does."""
+
+    async def score(state, target):  # type: ignore[no-untyped-def]
+        try:
+            value = float(state.output.completion)
+        except ValueError:
+            value = 0.0
+        return Score(value=value)
+
+    return score
+
+
+def _sector_task(name: str, sectors: list[str]) -> Task:
+    """A Brazil-tagged task with one sample per entry in ``sectors``, carrying that sector."""
+
+    @task(
+        name=name,
+        technical_requirement="Societal Alignment",
+        brazil_article="Arts. 25-28",
+        brazil_scope="high_risk",
+        brazil_gap_items=_GAP_ITEMS_FIXTURE,
+    )
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset(
+                [
+                    Sample(input="q", target="n/a", metadata={"sector": sector})
+                    for sector in sectors
+                ]
+            ),
+            solver=[generate()],
+            scorer=_sector_fraction_scorer(),
+        )
+
+    return _t()
+
+
+@pytest.fixture(scope="module")
+def sector_report(tmp_path_factory: pytest.TempPathFactory) -> BrazilComplianceReport:
+    """A run holding one sector-aware task over two sectors, plus one sector-less task.
+
+    Score design (forced outputs, in sample order):
+
+    * ``finance_bacen``: 1.0, 1.0, 1.0, 0.0 -> 0.750 ± 0.250
+    * ``health_anvisa``: 1.0, 0.0, 1.0, 0.0 -> 0.500 ± 0.289
+    * ``explanation_quality``: no sector at all -> contributes nothing to the overlay
+    """
+    log_dir = str(tmp_path_factory.mktemp("sector_logs"))
+    _run_samples_into(
+        log_dir,
+        _sector_task(
+            "aia_checklist",
+            ["finance_bacen"] * 4 + ["health_anvisa"] * 4,
+        ),
+        ["1.0", "1.0", "1.0", "0.0", "1.0", "0.0", "1.0", "0.0"],
+    )
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "explanation_quality",
+            "Interpretability",
+            samples=4,
+            article="Art. 6, I",
+            scope="high_risk",
+        ),
+        ["1.0", "1.0", "0.0", "0.0"],
+    )
+    return build_brazil_report(log_dir)
+
+
+class _StubMetric:
+    """Minimal stand-in for ``EvalMetric`` — the parser only ever reads ``.value``."""
+
+    def __init__(self, value: float) -> None:
+        self.value = value
+
+
+class TestSectorMetricParsing:
+    """``_sector_metrics`` reads the flattened ``grouped()`` keys, and only those."""
+
+    def test_parses_a_mean_stderr_pair(self) -> None:
+        parsed = _sector_metrics(
+            {
+                "mean": _StubMetric(0.6),
+                "stderr": _StubMetric(0.1),
+                "mean_finance_bacen": _StubMetric(0.75),
+                "stderr_finance_bacen": _StubMetric(0.25),
+            }
+        )
+        assert parsed == {"finance_bacen": (0.75, 0.25)}
+
+    def test_the_bare_headline_metrics_are_not_sectors(self) -> None:
+        """``mean`` / ``stderr`` need a non-empty suffix to be a group key."""
+        assert _sector_metrics({"mean": _StubMetric(0.6), "stderr": _StubMetric(0.1)}) == {}
+
+    def test_a_sector_without_a_stderr_still_reports_its_mean(self) -> None:
+        parsed = _sector_metrics({"mean_capital_cvm": _StubMetric(0.4)})
+        assert parsed == {"capital_cvm": (0.4, None)}
+
+    def test_a_stderr_without_a_mean_is_dropped(self) -> None:
+        """A standard error with no point estimate is not a reportable sector."""
+        assert _sector_metrics({"stderr_capital_cvm": _StubMetric(0.4)}) == {}
+
+    def test_non_finite_values_are_dropped(self) -> None:
+        parsed = _sector_metrics(
+            {
+                "mean_finance_bacen": _StubMetric(0.75),
+                "stderr_finance_bacen": _StubMetric(float("nan")),
+                "mean_health_anvisa": _StubMetric(float("nan")),
+            }
+        )
+        assert parsed == {"finance_bacen": (0.75, None)}
+
+    def test_sectors_come_back_sorted(self) -> None:
+        parsed = _sector_metrics(
+            {
+                "mean_health_anvisa": _StubMetric(0.5),
+                "mean_capital_cvm": _StubMetric(0.4),
+                "mean_finance_bacen": _StubMetric(0.75),
+            }
+        )
+        assert list(parsed) == ["capital_cvm", "finance_bacen", "health_anvisa"]
+
+
+class TestSectorAggregation:
+    """The overlay groups reach the report from a real log, with their error bars."""
+
+    def test_task_score_carries_its_sector_scores(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        by_task = {t.task: t for t in sector_report.brazil_task_scores}
+        aia = by_task["aia_checklist"]
+        assert set(aia.sector_scores) == {"finance_bacen", "health_anvisa"}
+        fin_mean, fin_se = aia.sector_scores["finance_bacen"]
+        assert fin_mean == pytest.approx(_SECTOR_FIN_MEAN)
+        assert fin_se == pytest.approx(_SECTOR_FIN_SE)
+
+    def test_a_sector_less_task_carries_none(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        by_task = {t.task: t for t in sector_report.brazil_task_scores}
+        assert by_task["explanation_quality"].sector_scores == {}
+
+    def test_sector_groups_are_built_and_sorted(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        assert [g.sector for g in sector_report.sector_groups] == [
+            "finance_bacen",
+            "health_anvisa",
+        ]
+
+    def test_group_mean_and_pooled_stderr(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        group = sector_report.sector_for("health_anvisa")
+        assert group is not None
+        assert group.tasks == [
+            ("aia_checklist", pytest.approx(_SECTOR_HEA_MEAN), pytest.approx(_SECTOR_HEA_SE))
+        ]
+        assert group.mean_score == pytest.approx(_SECTOR_HEA_MEAN)
+        assert group.mean_stderr == pytest.approx(_SECTOR_HEA_SE)
+
+    def test_gap_items_ride_in_from_the_decorator(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        """Read from the log **header** — the aggregator never loads a sample."""
+        by_task = {t.task: t for t in sector_report.brazil_task_scores}
+        assert by_task["aia_checklist"].gap_items == tuple(_GAP_ITEMS_FIXTURE.split(","))
+        assert by_task["explanation_quality"].gap_items == ()
+        group = sector_report.sector_for("finance_bacen")
+        assert group is not None
+        assert group.gap_items == tuple(sorted(_GAP_ITEMS_FIXTURE.split(",")))
+
+    def test_the_headline_score_still_resolves_alongside_the_grouped_metrics(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        """The trap the outline flags: declaring grouped() must not cost the headline mean."""
+        by_task = {t.task: t for t in sector_report.brazil_task_scores}
+        aia = by_task["aia_checklist"]
+        assert aia.metric_name == "mean"
+        assert aia.score == pytest.approx(0.625)  # 5 of 8 samples scored 1.0
+        assert aia.stderr is not None
+
+    def test_a_run_without_a_sector_aware_task_has_no_overlay(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        assert stderr_report.sector_groups == []
+
+
+class TestSectorRendering:
+    """The overlay section renders in all three views, and is omitted when there is nothing."""
+
+    def test_markdown_renders_the_section(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        md = sector_report.to_markdown()
+        assert "## Sector overlay (BACEN / ANVISA / CVM)" in md
+        assert "| `finance_bacen` | `aia_checklist` | 0.750 ± 0.250 |" in md
+        assert "| `health_anvisa` | `aia_checklist` | 0.500 ± 0.289 |" in md
+
+    def test_markdown_marks_the_gap_items(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        md = sector_report.to_markdown()
+        assert "**Gap-flagging items in this run:**" in md
+        assert "`human_review_gap_lgpd20`" in md
+        assert "a finding about Brazilian law rather than about the model" in md
+
+    def test_markdown_carries_the_not_legal_advice_caveat(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        md = sector_report.to_markdown()
+        assert "not legal advice" in md
+        assert "No Brazilian sector regulator has issued a binding AI-specific rule." in md
+
+    def test_markdown_section_order_is_fixed(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        md = sector_report.to_markdown()
+        assert (
+            md.index("## EU ↔ Brazil side-by-side")
+            < md.index("## Sector overlay (BACEN / ANVISA / CVM)")
+            < md.index("## Brazil compliance coverage map (9 requirements)")
+        )
+
+    def test_markdown_omits_the_section_when_no_sector_ran(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        assert "Sector overlay" not in stderr_report.to_markdown()
+
+    def test_json_carries_the_overlay(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        data = json.loads(sector_report.to_json())
+        overlay = {entry["sector"]: entry for entry in data["sector_overlay"]}
+        assert set(overlay) == {"finance_bacen", "health_anvisa"}
+        assert overlay["finance_bacen"]["mean_score"] == pytest.approx(_SECTOR_FIN_MEAN)
+        assert overlay["finance_bacen"]["mean_stderr"] == pytest.approx(_SECTOR_FIN_SE)
+        assert overlay["finance_bacen"]["tasks"] == [
+            {
+                "task": "aia_checklist",
+                "score": pytest.approx(_SECTOR_FIN_MEAN),
+                "stderr": pytest.approx(_SECTOR_FIN_SE),
+            }
+        ]
+        assert overlay["finance_bacen"]["gap_items"] == sorted(_GAP_ITEMS_FIXTURE.split(","))
+
+    def test_json_overlay_is_empty_when_no_sector_ran(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        assert json.loads(stderr_report.to_json())["sector_overlay"] == []
+
+    def test_html_renders_the_section_with_band_colouring_and_stderr(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        doc = sector_report.to_html()
+        assert "<h2>Sector overlay (BACEN / ANVISA / CVM)</h2>" in doc
+        # The point estimate keeps its band class; the error bar is the muted sibling.
+        assert '<span class="badge warn">0.750</span> <span class="se">± 0.250<' in doc
+        assert '<span class="badge warn">0.500</span> <span class="se">± 0.289<' in doc
+        assert "<code class='task'>finance_bacen</code>" in doc
+
+    def test_html_marks_the_gap_items(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        doc = sector_report.to_html()
+        assert "<strong>Gap-flagging items in this run:</strong>" in doc
+        assert "<code class='task'>human_review_gap_lgpd20</code>" in doc
+
+    def test_html_stays_self_contained_with_the_overlay(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        doc = sector_report.to_html()
+        assert "src=" not in doc
+        assert "href=" not in doc
+        assert "http://" not in doc
+        assert "https://" not in doc
+
+    def test_html_omits_the_section_when_no_sector_ran(
+        self, stderr_report: BrazilComplianceReport
+    ) -> None:
+        assert "Sector overlay" not in stderr_report.to_html()
+
+
+class TestSectorStandardErrorSuppression:
+    """A sector error bar is dropped when the run cannot have reached two samples per group.
+
+    Inspect's ``stderr()`` returns a **placeholder** ``0`` below two observations, so a
+    ``split=held_out`` run (one sample per sector — exactly what Phase 6's judge grades) would
+    otherwise print ``0.000 ± 0.000`` for a single observation. That is the overconfidence
+    Phase 1 exists to remove, and it applies to the overlay too.
+    """
+
+    def test_a_one_sample_per_sector_run_shows_no_sector_stderr(
+        self, tmp_path: Path
+    ) -> None:
+        log_dir = str(tmp_path / "held_out_logs")
+        _run_samples_into(
+            log_dir,
+            _sector_task("aia_checklist", ["finance_bacen", "health_anvisa"]),
+            ["1.0", "0.0"],
+        )
+        report = build_brazil_report(log_dir)
+        group = report.sector_for("finance_bacen")
+        assert group is not None
+        assert group.tasks == [("aia_checklist", 1.0, None)]
+        assert group.mean_stderr is None
+        # ...and the renderers show the bare point estimate, never "± None".
+        md = report.to_markdown()
+        assert "| `finance_bacen` | `aia_checklist` | 1.000 |" in md
+        assert "± None" not in md
+
+    def test_a_balanced_multi_sample_run_keeps_its_sector_stderr(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        group = sector_report.sector_for("finance_bacen")
+        assert group is not None
+        assert group.tasks[0][2] == pytest.approx(_SECTOR_FIN_SE)

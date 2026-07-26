@@ -51,6 +51,24 @@ Two deliberate statistical choices:
   datasets, same scorer), so :attr:`SideBySideRow.delta_stderr` is ``sqrt(se_b² + se_eu²)``. That
   is what makes "the gap is larger than its uncertainty" a checkable claim rather than an
   assertion.
+
+The sector overlay (iteration 2, Phase 4)
+-----------------------------------------
+
+``aia_checklist`` declares Inspect ``grouped()`` metrics on each sample's ``metadata["sector"]``
+alongside its ungrouped ``mean()`` / ``stderr()``. Inspect flattens a dict-valued metric into one
+``EvalScore.metrics`` entry per key, using the key **verbatim**, so with the task's
+``name_template`` the real log keys are ``mean_<sector>`` and ``stderr_<sector>`` — read here by
+:func:`_sector_metrics`, which is deliberately written against that *shape* rather than against a
+hard-coded sector vocabulary, so this module stays jurisdiction-neutral (Resolution 6 plans to
+extract a generic ``report`` command from it). The names were read out of a real mock log rather
+than assumed, and ``tests/test_aia_checklist.py::TestGroupedMetricKeys`` pins them.
+
+Gap-flagging items reach the report through the **task decorator** (``brazil_gap_items``), not
+through ``Score.metadata``: sample scores are not in the log header, and
+:func:`build_brazil_report` is header-only by design. The overlay section names them so a low
+sector score reads as a regulatory finding — the item is one no Brazilian instrument imposes —
+rather than only as a model failure.
 """
 
 from __future__ import annotations
@@ -141,6 +159,23 @@ _METRIC_PREFERENCE: tuple[str, ...] = ("accuracy", "mean")
 # The metric name Inspect's ``stderr()`` records. Read as a *sibling* of the headline metric (it is
 # never a candidate for :data:`_METRIC_PREFERENCE` — a standard error is not a score).
 _STDERR_METRIC = "stderr"
+
+# Prefixes of the flattened per-group metric keys a ``grouped()`` metric writes into
+# ``EvalScore.metrics``. The suffix after the prefix is the group name (here, the sector key).
+#
+# Verified against a real log rather than assumed: Inspect names a dict-valued metric's entries
+# by the dict key **as-is** (``scorers_from_metric_list`` in ``inspect_ai/_eval/task/results.py``
+# calls ``metrics_unique_key(metric_key, …)``), with **no** ``registry_log_name`` prefix — so
+# ``grouped(mean(), "sector", name_template="mean_{group_name}")`` produces exactly
+# ``mean_finance_bacen``. Without the template both grouped metrics would emit the bare sector
+# key and the second would be silently renamed ``finance_bacen2``; the task therefore sets it.
+_SECTOR_MEAN_PREFIX = "mean_"
+_SECTOR_STDERR_PREFIX = "stderr_"
+
+# Task-decorator attrib carrying the comma-separated ids of the gap-flagging checklist items
+# (obligations no Brazilian instrument imposes). Read from the log header so the aggregator stays
+# header-only; absent from pre-Phase-4 logs, in which case the overlay note simply omits the list.
+_GAP_ITEMS_ATTRIB = "brazil_gap_items"
 
 # Minimum sample count for a reportable standard error. Inspect's ``stderr()`` returns a
 # *placeholder* ``0`` when it has fewer than two observations to estimate from
@@ -249,6 +284,48 @@ def _stderr_metric(metrics: dict[str, Any]) -> float | None:
     return value
 
 
+def _sector_metrics(metrics: dict[str, Any]) -> dict[str, tuple[float, float | None]]:
+    """Read a score's per-sector ``grouped()`` metrics: ``sector -> (mean, stderr | None)``.
+
+    ``metrics`` maps metric name -> object with a ``.value`` (the log-header
+    ``EvalScore.metrics``). Sector entries are recognised **by shape** — a
+    ``mean_<sector>`` / ``stderr_<sector>`` pair — not against a hard-coded sector list, so this
+    module carries no dependency on the task's vocabulary and a Phase 5 sector appears with no
+    change here.
+
+    A sector is reported only when its *mean* is present and finite; its standard error is
+    optional and dropped when non-finite, exactly as :func:`_stderr_metric` does for the headline
+    value. The bare ``mean`` / ``stderr`` keys (the ungrouped headline metrics) are never sector
+    entries — the prefix requires a non-empty suffix.
+    """
+    means: dict[str, float] = {}
+    stderrs: dict[str, float] = {}
+    for name, metric in metrics.items():
+        for prefix, sink in (
+            (_SECTOR_MEAN_PREFIX, means),
+            (_SECTOR_STDERR_PREFIX, stderrs),
+        ):
+            if not name.startswith(prefix) or len(name) == len(prefix):
+                continue
+            value = float(metric.value)
+            if math.isfinite(value):
+                sink[name[len(prefix) :]] = value
+    return {sector: (value, stderrs.get(sector)) for sector, value in sorted(means.items())}
+
+
+def _gap_items_from_attribs(task_attribs: dict[str, Any]) -> tuple[str, ...]:
+    """Read the gap-flagging item ids a task recorded on its decorator (``brazil_gap_items``).
+
+    Empty for every task that declares none, and for logs written before the attrib existed —
+    in which case the overlay section renders without the "these items are gaps" note rather
+    than guessing.
+    """
+    raw = task_attribs.get(_GAP_ITEMS_ATTRIB)
+    if not isinstance(raw, str) or not raw.strip():
+        return ()
+    return tuple(part.strip() for part in raw.split(",") if part.strip())
+
+
 def _pooled_stderr(stderrs: list[float | None]) -> float | None:
     """Standard error of the *mean* of ``k`` independent estimates: ``sqrt(Σ seᵢ²) / k``.
 
@@ -281,6 +358,10 @@ class TaskScore:
         stderr: The standard error of ``score``, read from the same metrics dict (Inspect's
             ``stderr()`` metric), or ``None`` when the scorer declared none. Appended with a
             default so every existing construction is unaffected.
+        sector_scores: ``sector -> (mean, stderr | None)`` from the task's ``grouped()`` metrics.
+            Empty for every task that declares none (all of them but ``aia_checklist``).
+        gap_items: Ids of this task's gap-flagging checklist items, from the
+            ``brazil_gap_items`` decorator attrib. Empty for every other task.
     """
 
     task: str
@@ -293,6 +374,8 @@ class TaskScore:
     total_samples: int
     status: str
     stderr: float | None = None
+    sector_scores: dict[str, tuple[float, float | None]] = field(default_factory=dict)
+    gap_items: tuple[str, ...] = ()
 
     @property
     def is_brazil(self) -> bool:
@@ -324,6 +407,38 @@ class ArticleGroup:
         partial pooling; see :func:`_pooled_stderr`).
         """
         return _pooled_stderr([t.stderr for t in self.tasks if t.score is not None])
+
+
+@dataclass
+class SectorGroup:
+    """One sector's slice of the overlay section — every task that scored that sector.
+
+    Only ``aia_checklist`` declares per-sector metrics today, so a group usually holds one task;
+    the shape generalises so a second sector-aware task needs no change here.
+
+    Attributes:
+        sector: The sector key exactly as the log recorded it (e.g. ``"finance_bacen"``). The
+            report does not translate it: the key is the stable machine identifier, and the
+            regulator names live in the section heading.
+        tasks: ``(task_name, mean, stderr | None)`` per contributing task, sorted by task name.
+        gap_items: The union of the contributing tasks' gap-flagging item ids, sorted.
+    """
+
+    sector: str
+    tasks: list[tuple[str, float, float | None]] = field(default_factory=list)
+    gap_items: tuple[str, ...] = ()
+
+    @property
+    def mean_score(self) -> float | None:
+        """Mean of the contributing tasks' sector scores."""
+        if not self.tasks:
+            return None
+        return sum(value for _, value, _ in self.tasks) / len(self.tasks)
+
+    @property
+    def mean_stderr(self) -> float | None:
+        """Standard error of :attr:`mean_score`, pooled exactly as the per-article means are."""
+        return _pooled_stderr([se for _, _, se in self.tasks])
 
 
 @dataclass(frozen=True)
@@ -423,6 +538,9 @@ class BrazilComplianceReport:
         unmapped_tasks: EU-only task scores with no Brazil article (context, not scored here).
         coverage_by_requirement: The 9-requirement breadth coverage map (one row per canonical
             COMPL-AI technical requirement), in :data:`NINE_TECHNICAL_REQUIREMENTS` order.
+        sector_groups: The sector overlay — one entry per sector any task reported, sorted by
+            sector key. Empty for a run with no sector-aware task, in which case the overlay
+            section is omitted entirely rather than rendered blank.
     """
 
     log_dir: str
@@ -433,6 +551,7 @@ class BrazilComplianceReport:
     eu_task_scores: list[TaskScore]
     unmapped_tasks: list[TaskScore]
     coverage_by_requirement: list[RequirementCoverage]
+    sector_groups: list[SectorGroup] = field(default_factory=list)
 
     # -- lookups -------------------------------------------------------------------------
 
@@ -440,6 +559,13 @@ class BrazilComplianceReport:
         """Return the article group matching ``article`` (and ``scope`` if given)."""
         for group in self.article_groups:
             if group.article == article and (scope is None or group.scope == scope):
+                return group
+        return None
+
+    def sector_for(self, sector: str) -> SectorGroup | None:
+        """Return the overlay group for a sector key, if the run produced one."""
+        for group in self.sector_groups:
+            if group.sector == sector:
                 return group
         return None
 
@@ -511,6 +637,19 @@ class BrazilComplianceReport:
                 }
                 for cov in self.coverage_by_requirement
             ],
+            "sector_overlay": [
+                {
+                    "sector": group.sector,
+                    "mean_score": group.mean_score,
+                    "mean_stderr": group.mean_stderr,
+                    "gap_items": list(group.gap_items),
+                    "tasks": [
+                        {"task": task, "score": value, "stderr": se}
+                        for task, value, se in group.tasks
+                    ],
+                }
+                for group in self.sector_groups
+            ],
         }
 
     def to_json(self, indent: int = 2) -> str:
@@ -581,6 +720,51 @@ _COVERAGE_MARK: dict[str, str] = {
     "eu_only": "🟡 EU task only",
     "uncovered": "⚪ not yet covered",
 }
+
+
+# The sector-overlay section's standing caveat. Shared verbatim by the Markdown and HTML
+# renderers (modulo markup) so the two can never drift, and worded so the section cannot be read
+# as a claim that Brazil regulates AI by sector — it does not.
+_SECTOR_CAVEAT_PARTS: tuple[str, ...] = (
+    "No Brazilian sector regulator has issued a binding AI-specific rule. Each overlay scores a "
+    "deployment against the adjacent, binding obligations that act as *de facto* analogues to "
+    "PL 2338's rights — ombudsman duties, credit-model governance, Cadastro Positivo rights — "
+    "plus the cross-sector Arts. 25-28 items every sample carries.",
+    "Some overlay items are **gap-flagging**: no instrument imposes them, so they test whether "
+    "the deployer voluntarily exceeds the baseline, and a low score there is a finding about "
+    "Brazilian law rather than about the model.",
+    "Structural analogies for benchmark design — **not legal advice**. Instruments, "
+    "primary-source URLs and sourcing tiers: `docs/sector-overlay-legal-verification.md`.",
+)
+
+
+def _render_sector_markdown(report: BrazilComplianceReport) -> list[str]:
+    """The 'Sector overlay' Markdown section, or nothing when no task reported a sector."""
+    if not report.sector_groups:
+        return []
+    lines: list[str] = []
+    lines.append("## Sector overlay (BACEN / ANVISA / CVM)")
+    lines.append("")
+    for part in _SECTOR_CAVEAT_PARTS:
+        lines.append(part)
+        lines.append("")
+    lines.append("| Sector | Task | Sector score ± se |")
+    lines.append("|---|---|---|")
+    for group in report.sector_groups:
+        for task, value, se in group.tasks:
+            lines.append(f"| `{group.sector}` | `{task}` | {_fmt_score_se(value, se)} |")
+        if len(group.tasks) > 1:
+            lines.append(
+                f"| **`{group.sector}` — mean** |  | "
+                f"**{_fmt_score_se(group.mean_score, group.mean_stderr)}** |"
+            )
+    lines.append("")
+    gap_items = sorted({item for group in report.sector_groups for item in group.gap_items})
+    if gap_items:
+        listed = ", ".join(f"`{item}`" for item in gap_items)
+        lines.append(f"**Gap-flagging items in this run:** {listed}.")
+        lines.append("")
+    return lines
 
 
 def _render_markdown(report: BrazilComplianceReport) -> str:
@@ -662,6 +846,9 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
             f"{eu_task} | {eu_score} | {delta} |"
         )
     lines.append("")
+
+    # -- Sector overlay section ----------------------------------------------------------
+    lines.extend(_render_sector_markdown(report))
 
     # -- Coverage map section (9-requirement breadth) -----------------------------------
     lines.append("## Brazil compliance coverage map (9 requirements)")
@@ -889,6 +1076,60 @@ def _render_side_by_side_table(report: BrazilComplianceReport) -> list[str]:
     return rows
 
 
+def _render_sector_table(report: BrazilComplianceReport) -> list[str]:
+    rows: list[str] = []
+    rows.append("<table>")
+    rows.append(
+        "<thead><tr>"
+        "<th>Sector</th><th>Task</th><th class='score'>Sector score ± se</th>"
+        "</tr></thead>"
+    )
+    rows.append("<tbody>")
+    for group in report.sector_groups:
+        for task, value, se in group.tasks:
+            rows.append(
+                "<tr>"
+                f"<td><code class='task'>{_esc(group.sector)}</code></td>"
+                f"<td><code class='task'>{_esc(task)}</code></td>"
+                f"<td class='score'>{_html_badge(value, _score_band(value))}"
+                f"{_html_se(se)}</td>"
+                "</tr>"
+            )
+        if len(group.tasks) > 1:
+            rows.append(
+                "<tr class='mean'>"
+                f"<td><code class='task'>{_esc(group.sector)}</code> — mean</td>"
+                "<td></td>"
+                f"<td class='score'>"
+                f"{_html_badge(group.mean_score, _score_band(group.mean_score))}"
+                f"{_html_se(group.mean_stderr)}</td>"
+                "</tr>"
+            )
+    rows.append("</tbody></table>")
+    return rows
+
+
+def _render_sector_section(report: BrazilComplianceReport) -> list[str]:
+    """The 'Sector overlay' HTML section, or nothing when no task reported a sector."""
+    if not report.sector_groups:
+        return []
+    parts: list[str] = []
+    parts.append("<h2>Sector overlay (BACEN / ANVISA / CVM)</h2>")
+    for part in _SECTOR_CAVEAT_PARTS:
+        # The shared caveat is plain prose with Markdown emphasis; escape it, then restore the
+        # two markup conventions it uses so the HTML reads the same as the Markdown.
+        text = _esc(part).replace("**", "").replace("*de facto*", "<em>de facto</em>")
+        parts.append(f'<p class="note">{text}</p>')
+    parts.extend(_render_sector_table(report))
+    gap_items = sorted({item for group in report.sector_groups for item in group.gap_items})
+    if gap_items:
+        listed = ", ".join(f"<code class='task'>{_esc(item)}</code>" for item in gap_items)
+        parts.append(
+            f'<p class="note"><strong>Gap-flagging items in this run:</strong> {listed}.</p>'
+        )
+    return parts
+
+
 def _render_coverage_table(report: BrazilComplianceReport) -> list[str]:
     rows: list[str] = []
     rows.append("<table>")
@@ -994,6 +1235,9 @@ def _render_html(report: BrazilComplianceReport) -> str:
     )
     parts.extend(_render_side_by_side_table(report))
 
+    # -- Sector overlay section ----------------------------------------------------------
+    parts.extend(_render_sector_section(report))
+
     # -- Coverage map section (9-requirement breadth) -----------------------------------
     parts.append("<h2>Brazil compliance coverage map (9 requirements)</h2>")
     parts.append(
@@ -1029,19 +1273,37 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
     score_value: float | None = None
     metric_name: str | None = None
     stderr_value: float | None = None
+    sector_scores: dict[str, tuple[float, float | None]] = {}
     total_samples = 0
     if log.results is not None:
         total_samples = log.results.total_samples
         if log.results.scores:
             # A task usually has a single score; take the first (its headline metric). The
             # standard error is read from the *same* metrics dict — a sibling of the point
-            # estimate, not a competing one.
+            # estimate, not a competing one, and so are the per-sector grouped metrics.
             metrics = log.results.scores[0].metrics
             metric_name, score_value = _headline_metric(metrics)
             stderr_value = _stderr_metric(metrics)
+            sector_scores = _sector_metrics(metrics)
             if total_samples < _MIN_SAMPLES_FOR_STDERR:
                 # Fewer than two observations: Inspect's 0 is a placeholder, not an estimate.
                 stderr_value = None
+            # The same discipline for the per-sector errors, applied as conservatively as a
+            # header-only reader can: the log records the task's total sample count but **not**
+            # each group's, so we drop every sector's standard error unless the run has enough
+            # samples for every group to have reached two. That is exactly the case Phase 6's
+            # ``split=held_out`` runs hit (one sample per sector), where Inspect's placeholder 0
+            # would otherwise print a single observation as ``0.000 ± 0.000``.
+            #
+            # Residual, stated rather than hidden: an *unbalanced* run — say 5 samples split 4/1
+            # across two sectors — passes this test while one group still has a single
+            # observation. Detecting that needs the samples, and this aggregator is deliberately
+            # header-only. Every dataset the repo ships is balanced across sectors by
+            # construction (``aia_scenarios`` interleaves), so the case is not reachable today.
+            if sector_scores and total_samples < _MIN_SAMPLES_FOR_STDERR * len(sector_scores):
+                sector_scores = {
+                    sector: (value, None) for sector, (value, _) in sector_scores.items()
+                }
 
     return TaskScore(
         task=task_name,
@@ -1054,6 +1316,8 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
         total_samples=total_samples,
         status=log.status,
         stderr=stderr_value,
+        sector_scores=sector_scores,
+        gap_items=_gap_items_from_attribs(attribs),
     )
 
 
@@ -1141,6 +1405,24 @@ def _build_side_by_side(
             )
 
     return paired_rows + brazil_only_rows
+
+
+def _build_sector_groups(scores: list[TaskScore]) -> list[SectorGroup]:
+    """Group the per-sector metrics of every sector-aware task, sorted by sector then task.
+
+    A task with no ``grouped()`` metrics contributes nothing, so a run without ``aia_checklist``
+    produces an empty list and the overlay section is omitted rather than rendered blank.
+    """
+    groups: dict[str, SectorGroup] = {}
+    gap_by_sector: dict[str, set[str]] = {}
+    for task in sorted(scores, key=lambda t: t.task):
+        for sector, (value, se) in sorted(task.sector_scores.items()):
+            group = groups.setdefault(sector, SectorGroup(sector=sector))
+            group.tasks.append((task.task, value, se))
+            gap_by_sector.setdefault(sector, set()).update(task.gap_items)
+    for sector, group in groups.items():
+        group.gap_items = tuple(sorted(gap_by_sector.get(sector, set())))
+    return [groups[sector] for sector in sorted(groups)]
 
 
 def _build_coverage(all_scores: list[TaskScore]) -> list[RequirementCoverage]:
@@ -1256,4 +1538,5 @@ def build_brazil_report(log_dir: str) -> BrazilComplianceReport:
         eu_task_scores=eu_scores,
         unmapped_tasks=unmapped,
         coverage_by_requirement=_build_coverage(all_scores),
+        sector_groups=_build_sector_groups(all_scores),
     )

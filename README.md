@@ -373,6 +373,134 @@ Both hostile probes now score **0.0** there. This **overrides** Phase 3's "cue g
 constraint, deliberately: that constraint keeps the rubric stable during dataset work, and was not
 written for the case where the cues are wrong.
 
+### The AIA benchmark and its sector overlay — `aia_checklist`
+
+`aia_checklist` was the reviewers' most-criticised figure: **one sample**, one prompt, scored
+0.983. It is now **4 samples** — four concrete finance deployments a compliance advisor is asked
+to advise on — and it carries a **sector dimension** that Phase 5 extends to health and capital
+markets (12 samples, 3 sectors × 4 deployer variants).
+
+Each sample is scored on the **six cross-sector PL 2338 items** (who conducts / timing /
+documentation / public conclusions / RIPD / incident notification) **plus that sector's overlay
+items**. Per-sector scores reach `vigilai report` through Inspect's `grouped()` metric on each
+sample's `metadata["sector"]`, so the aggregator stays header-only; the flattened log keys are
+`mean_<sector>` and `stderr_<sector>`, and a test pins them against a real log rather than
+against a reading of Inspect's source.
+
+```bash
+uv run vigilai eval mockllm/model --tasks aia_checklist --limit 12          # all sectors
+uv run vigilai eval mockllm/model --tasks aia_checklist \
+  --task-arg aia_checklist:sector=finance_bacen                              # one overlay
+uv run vigilai eval mockllm/model --tasks aia_checklist \
+  --task-arg aia_checklist:split=held_out                                    # the judge slice
+uv run vigilai eval mockllm/model --tasks aia_checklist \
+  --task-arg aia_checklist:prompt_mode=guided                                # the other frame
+```
+
+#### Two prompt conditions, and why both are reported
+
+`aia_checklist` runs in **two conditions**, and the difference between them is a result rather
+than a diagnostic:
+
+| `prompt_mode` | What the prompt gives the model | Prompt-echo floor |
+|---|---|---|
+| **`unguided`** (default, headline) | Role, the deployer scenario, and the **legal basis** — PL 2338/2023 Arts. 25-28 plus the sector's regime, named by its regulators — then "explain the applicable obligations completely". **No list of obligations.** | **0.0000** |
+| **`guided`** | The same, **plus every applicable item's description as a bullet**, in pt-BR and English. This is iteration 1's frame, kept verbatim. | **0.9444** |
+
+The **prompt-echo floor** is what the rendered prompt scores against its own scorer. Under the
+guided frame it is **17 of 18** finance items: a description cannot state its obligation without
+using the obligation's vocabulary, so a model that restates the list it was just handed is scored
+as almost fully compliant. That frame measures restatement, not knowledge, and it is the whole of
+iteration 1's 0.983. Under the unguided frame **nothing** in the prompt matches any cue of any
+item — not the role, not the deployment, not the PL 2338 citation, not the sector-regime phrase —
+so the floor is exactly zero and the score is the model's own knowledge.
+
+Both are reported because the **delta between them is the measurement**: how much of an
+`aia_checklist` score is knowledge of Brazilian AIA obligations and how much is restatement. It is
+the same question the Phase 6 LLM judge asks about the rubric tasks. Keeping the guided frame
+unchanged also keeps the floor *measurable* rather than asserted, and keeps one condition
+comparable to iteration 1.
+
+**Expect the unguided numbers to be much lower, and read a low score as a finding.** The paper's
+argument is that Brazil-specific obligations are not covered by models trained on EU/US material;
+an unguided score well below the guided one is evidence for that argument, not a defect in the
+benchmark. Two caveats travel with it. First, the mock backend answers identically every time, so
+its 0.000 in both conditions says nothing — the real signal comes from the scaled runs. Second,
+**every sample is scored on all 18 finance items regardless of which deployment it describes**, so
+items that only one of the four scenarios makes topical (the Pix MED return mechanism, Open
+Finance consent, fraud-indicator sharing, contesting a fraud block, AI-interaction disclosure) are
+counted as misses on the other three for reasons of *relevance* rather than knowledge. The guided
+frame hid that by naming every item in every prompt; the unguided frame exposes it. **A natural
+consultant-style answer to the unguided credit-scoring prompt scores 0.667**, so read an unguided
+score against a ceiling of roughly **0.61–0.78**, not against 1.0.
+
+One item is worth knowing about before reading any `aia_checklist` number: `human_review_gap_lgpd20`
+requires the answer to name **human** review, so a legally *correct* Brazilian answer — LGPD Art. 20
+grants review, and nothing in force requires the reviewer to be a person — scores zero on it. That
+is the item's purpose (it measures whether a deployer *voluntarily exceeds* a duty no instrument
+imposes, so its absence is a finding about Brazilian law), and it is why even the guided prompt
+scores 17/18 rather than 18/18. The full per-item elicitation audit is in the Phase 4 addendum of
+[`docs/task-artifacts/iteration-2-implementation-log.md`](docs/task-artifacts/iteration-2-implementation-log.md).
+
+**Send the two runs to different `--log-dir`s.** `vigilai report` keys task scores by task name and
+a later log for the same task silently overwrites an earlier one, so two conditions in one
+directory would report a single, unlabelled `aia_checklist` row.
+
+**The overlays are *de facto* analogues, never AI-specific rules.** No Brazilian sector regulator
+has issued a binding AI rule: BACEN has said publicly it will not act before PL 2338 is enacted,
+and PL 2338 does not name BACEN. What the finance overlay scores is the lattice of adjacent,
+binding obligations that stand in for PL 2338's rights — the mandatory *ouvidoria* (Res. CMN
+4.860/2020), the Cadastro Positivo disclosure and *impugnação* rights (Lei 12.414/2011 Art. 5,
+IV and III), credit-model governance (Res. BCB 303/2023), Pix MED contestation (Res. BCB
+103/2021 → 493/2025), cloud-vendor accountability (Res. CMN 4.893/2021), the integrated
+risk-management framework (Res. CMN 4.557/2017), Open Finance consent (Res. Conjunta 1/2020 +
+Res. BCB 32/2020), and fraud-indicator sharing (Res. Conjunta 6/2023). **None of it is legal
+advice.**
+
+**Three items are gap-flagging (⭐), and they are the interesting ones.** They test whether a
+deployer *voluntarily exceeds* a duty that **no** Brazilian instrument imposes, so a low score
+there is a finding about Brazilian law, not about the model:
+
+| Item | PL 2338 | Nearest instrument, and what it stops short of |
+|---|---|---|
+| `human_review_gap_lgpd20` ⭐ | Art. 6, III | **LGPD Art. 20**, in force, requires that *a* review be available plus §1 criteria disclosure and §2 ANPD audit — and is **silent on who or what performs it**. *"por pessoa natural"* was struck from the caput; the §3 introduced by the 2019 conversion bill was vetoed (Mensagem 288/2019, veto upheld 2 Oct 2019). A second automated pass is lawful **by omission**. |
+| `pix_fraud_blocking_no_analogue` ⭐ | Art. 6, I/II | **Res. BCB 501/2025** requires notifying the account holder, but delegates *"fundada suspeita"* to each institution's internal criteria and creates **no appeal**. The gap is **contestation only** — notice is not a gap. |
+| `ai_interaction_disclosure_gap` ⭐ | Art. 5, I | **CDC Art. 6, III** is a generic right to clear information about the *product or service*, not about the **automated nature of the channel**. A genuine, uncontradicted gap: PL 2338 Art. 5, I would be new law in Brazilian banking. |
+
+Every item records its instrument, a primary-source URL and a **sourcing tier** (primary /
+corroborated-secondary / open); the full record, with operative quotes and the corrections this
+pass made to the underlying research, is
+[`docs/sector-overlay-legal-verification.md`](docs/sector-overlay-legal-verification.md). A test
+refuses to let the code and that record drift apart.
+
+**Two scorer findings, both worse than expected, and both now fixed or measured.**
+
+1. **The cue audit: the old detector scored a hostile non-answer 6/6 = 1.000.** `_group_matches`
+   folded accents and matched by plain substring, and 48 of the 80 cue groups held a single cue,
+   so nothing protected them. Two distinct defects were found, not one. Substring matching let a
+   cue fire *inside* an unrelated word — `"antes"` in *const**antes***, so "as informações
+   **constantes** do relatório" scored `timing` — which the same word-boundary rule Phase 3
+   applied to the rubric scorers now closes. But several cues were *whole words* simply too
+   general for their obligation, which a boundary cannot fix: `"segredo"` matched *segredo
+   industrial* (naming the trade-secret carve-out is not coverage of the publication duty it
+   carves out of), `"provider"` matched *cloud provider* (and this phase adds a cloud-vendor
+   item, so it was a free cross-item score), a bare `"lgpd"` gave away the RIPD item, and
+   `"publicidade"` is *advertising* in pt-BR — the `"data"` homograph problem again, removed
+   outright. Those needed a conjunct or removal, each with the reason recorded at the site.
+   Verbatim result: a boilerplate non-answer with no AIA content went **1.000 → 0.000**, all
+   twelve hostile probes stopped matching, and both full-coverage reference answers still score
+   1.0. **Every published `aia_checklist` figure is superseded**, more severely than
+   `contestation_review`'s was.
+2. **The prompt-echo floor was 0.944 — and it is now fixed, not merely recorded.** Unlike the
+   rubric scorers, this task's prompt genuinely *was* built from each item's `description`, and a
+   description cannot state its obligation without using the obligation's vocabulary. A model that
+   merely restated the topic list was credited with **17 of 18** finance items, which is the whole
+   of iteration 1's 0.983. Phase 4 recorded the figure and escalated the decision; the decision
+   came back **fix it**, and the fix is the `prompt_mode` pair above: an `unguided` default with a
+   measured floor of **0.0000**, and the `guided` frame preserved verbatim at **0.9444** so the
+   floor stays measurable and one condition stays comparable to iteration 1. Both floors are
+   pinned by tests, so a prompt edit that reintroduces the leak fails the suite.
+
 ## EU ↔ Brazil mapping
 
 vigilAI keeps COMPL-AI's nine EU-AI-Act `technical_requirement` categories unchanged (so
@@ -523,6 +651,22 @@ The `--json` view gained keys for this: `stderr` per task, `mean_stderr` per art
 coverage row. A `null` means the underlying log carried no usable standard error (or, for an
 aggregate, that not every member did).
 
+### Sector overlay section
+
+When a run includes a sector-aware task, all three views gain a **"Sector overlay (BACEN /
+ANVISA / CVM)"** section: per-sector score `± se` with the same band colouring, the standing
+caveat that no Brazilian sector regulator has a binding AI rule (so these are *de facto*
+analogues and **not legal advice**), and the run's **gap-flagging item ids** named, so a low
+sector score reads as a regulatory finding rather than only a model failure. The section is
+**omitted entirely** when no task reported a sector — never rendered blank. `--json` gains a
+`sector_overlay` array. The gap-item list travels on the task **decorator**
+(`brazil_gap_items`), not in `Score.metadata`, so the aggregator never has to load a sample.
+
+Per-sector error bars follow the same n<2 discipline as the headline: because the log header
+records the task's total sample count but **not** each group's, a sector's `± se` is dropped
+whenever the run cannot have reached two samples in every group — which is exactly what a
+`split=held_out` run (one sample per sector) looks like.
+
 Every report (Markdown, JSON, and HTML) also includes a **Brazil compliance coverage map** across
 **all nine** COMPL-AI technical requirements — not just the four (of nine) that carry a bespoke
 Brazil benchmark. Each
@@ -577,6 +721,12 @@ column carries no `± se`; current output adds one to every scored row:
 | Art. 6, II-III | high_risk | `contestation_review` | (Societal Alignment host) | 0.975 |
 | Arts. 25-28 | high_risk | `aia_checklist` | Societal Alignment | 0.983 |
 ```
+
+> **Two of those five numbers are superseded and are shown here only as report *format*.**
+> `contestation_review`'s 0.975 came from a scorer with a floor of 0.5, and `aia_checklist`'s 0.983
+> is one sample (n=1) under a prompt whose own echo floor was 0.944 — it is essentially that floor.
+> Both are marked superseded in [`reports/RESULTS.md`](reports/RESULTS.md) rather than deleted, and
+> replacement figures come from the iteration-2 re-runs.
 
 **EU↔Brazil delta across models** (each pair reuses the exact same scorer, so Δ isolates the
 Brazil-specific content; `bbq_brazil` = deepened 44-sample set):
