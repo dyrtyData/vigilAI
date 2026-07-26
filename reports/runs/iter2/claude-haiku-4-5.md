@@ -1,7 +1,7 @@
 # Brazil PL 2338/2023 — Compliance Report
 
 - **Model(s):** anthropic/claude-haiku-4-5
-- **Log directory:** `logs/iter2-scaled-claude-haiku-4-5`
+- **Log directory:** `logs/iter2-rescored-claude-haiku-4-5`
 - **Brazil-mapped tasks scored:** 5
 
 Scores are joined to PL 2338/2023 Chapter II rights (Arts. 5-6) and the AIA obligations (Arts. 25-28) via each task's `brazil_article` tag. Higher is better (1.0 = full compliance on the benchmark).

@@ -75,7 +75,8 @@ code, so mock-model evals and the test suite run deterministically with no netwo
 **`bbq_brazil` (Art. 5, III).** A Brazil-adapted [BBQ](https://aclanthology.org/2022.findings-acl.165/)
 (Parrish et al., ACL Findings 2022) bias benchmark in Portuguese. It reuses the *exact same*
 scoring path as the upstream `bbq` task (Inspect AI's `multiple_choice()` solver +
-`choice()` scorer), so the EU↔Brazil delta isolates purely the Brazil-specific content. It
+`choice()` grading, reached through the shared wrapper described below), so the EU↔Brazil delta
+isolates the Brazil-specific content rather than a scorer difference. It
 covers five category groups that the US-centric upstream BBQ omits (research §6 gaps):
 
 | Category group | Coverage (research §9) | Scenarios |
@@ -119,6 +120,32 @@ implementation — and is seeded from scenario identity rather than list positio
 reordering of the dataset and is reproducible from the committed data alone. The target letter is
 computed **after** the shuffle, which is what keeps the reused upstream `choice()` scorer correct
 **with no change to the scorer**.
+
+**One change to the answer *parse*, shared by `bbq` and `bbq_brazil` (2026-07-26).** Both tasks are
+scored by
+[`choice_sigil_tolerant`](src/vigilai/tasks/choice_parse.py), a thin vigilAI wrapper that delegates
+the grading to the unmodified upstream `choice()` and changes only how the marked letter is read.
+Inspect's `multiple_choice()` asks for `'ANSWER: $LETTER'`, where `$LETTER` is a placeholder; Claude
+Sonnet 4.6 copies the dollar sign through and answers `ANSWER: $B`, which upstream's
+`parse_answers` cannot match — the sample scores `INCORRECT` with an **empty `Score.answer`**,
+silently. It affected **1,628 of 4,000** `bbq_brazil` samples and **315 of 1,000** `bbq` samples in
+the iteration-2 Sonnet runs, and **0 of 5,000** for Haiku 4.5.
+
+The wrapper calls upstream's parser first and returns its answer verbatim whenever it succeeds, so
+it is a strict superset by construction and cannot change a sample upstream already read. It accepts
+`ANSWER: $B` and `ANSWER: $C$` (a letter in LaTeX inline math) plus the whitespace/case/period
+variants, and **deliberately refuses `ANSWER: $LETTER`** — the placeholder copied with no
+substitution is not an answer. Every score carries
+`metadata["answer_parse"]` (`strict` / `sigil_tolerant` / `unparsed`) so the rescued fraction of any
+run is countable per sample. The **prompt is untouched**, which is what allowed the affected logs to
+be re-scored rather than re-run (`tools/rescore_bbq.py`). Both tasks carry the wrapper so the
+EU↔Brazil pair stays like-for-like; the other reused upstream multiple-choice tasks
+(`mmlu_pro`, `arc_challenge`, `include`, …) still use bare `choice()` and carry the same latent
+defect — recorded as known exposure, since none of them is in the Brazil matrix.
+
+**The one-line pre-flight for any reused multiple-choice scorer: count the samples whose
+`Score.answer` is empty.** That is what would have caught this in iteration 1, where the anomaly was
+instead spot-checked and written up as a behavioural difference between models.
 
 **Sample count and uncertainty — the honest version.** The four samples of a scenario are **not
 independent observations**: the two polarities share a disambiguating context, and the two contexts
@@ -748,6 +775,9 @@ standalone:
   are independent runs of the same scorer. This is what makes a gap claim *checkable* rather than
   asserted: a Δ of −0.40 carrying ±0.19 clears its own uncertainty about twice over, while a Δ of
   −0.10 carrying the same bar does not — and the report now shows you which one you have.
+  **It does not check whether the two sides contain comparable items**, which is a separate and
+  larger risk: the EU `bbq` baseline turned out to be age-only, so its delta cleared its error bar
+  while comparing different prejudices. An error bar audits precision, never construct validity.
 - **Below two samples there is no `±` at all.** Inspect's `stderr()` returns a placeholder `0` when
   it has fewer than two observations, and printing `0.983 ± 0.000` for a single-observation task
   would read as infinitely precise. A genuine `0.000` from two or more identically scored samples
@@ -1011,7 +1041,23 @@ Brazil-specific content; `bbq_brazil` = deepened 44-sample set):
 | Pair | Haiku 4.5 | Sonnet 4.6 |
 |---|---|---|
 | Art. 5, I — AI disclosure (Brazil − EU) ⛔ | ~~0.524 − 1.000 = −0.48~~ → **−0.014 ± 0.014** | ~~0.524 − 1.000 = −0.48~~ → **−0.038 ± 0.038** |
-| Art. 5, III — bias, IBGE/regional (Brazil − EU) | 0.677 − 0.858 = **−0.18** | 0.402 − 0.498 = **−0.10** |
+| Art. 5, III — bias, IBGE/regional (Brazil − EU) ⛔ | ~~0.677 − 0.858 = −0.18~~ → **+0.044 ± 0.039** | ~~0.402 − 0.498 = −0.10~~ → **+0.102 ± 0.038** |
+
+> **⛔ The Art. 5, III bias delta is retracted too, and not replaced by the corrected numbers
+> beside it.** Two independent defects. (1) Sonnet's two inputs were **unreadable**: it answers
+> `ANSWER: $B` and upstream's parser cannot match it, on 41% of the Brazil samples and 32% of the EU
+> ones. Fixed and the logs re-scored (see the `bbq_brazil` section above); iteration 1's own
+> investigation of this anomaly concluded it was *"a genuine behavioral quirk, not a scorer bug"*,
+> and that conclusion was **wrong**. (2) **The EU baseline is one of BBQ's eleven axes.** `--limit`
+> is global per invocation and `inspect_evals.bbq` concatenates its subsets with `Age` first, so
+> `--limit 100` yields 100 `Age` samples and never reaches race, gender, nationality, religion,
+> class, disability, appearance or sexual orientation. The Δ therefore compares five Brazilian
+> prejudices in Portuguese against **ageism in English** — it varies the prejudice as well as the
+> jurisdiction. The corrected deltas above are shown because hiding them would be worse, but
+> **Haiku's is 1.1 standard errors from zero and neither is interpretable as a bias gap.** The
+> absolute `bbq_brazil` figures (Haiku 0.901 ± 0.015, Sonnet 0.937 ± 0.012 on the 400-sample set)
+> are the defensible numbers. Rebuilding the EU baseline across the subsets — about $0.58 per
+> frontier model — is the top item in future work.
 
 **⛔ Retracted key finding (Art. 5, I — AI disclosure).** This README previously reported that both
 frontier models deny being human on ~100% of the English questions but only ~52% of the Portuguese

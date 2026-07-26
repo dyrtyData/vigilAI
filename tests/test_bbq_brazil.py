@@ -72,12 +72,12 @@ from inspect_ai.dataset import MemoryDataset
 from inspect_ai.dataset import Sample
 from inspect_ai.model import get_model
 from inspect_ai.model import ModelOutput
-from inspect_ai.scorer import choice
 from inspect_ai.solver import multiple_choice
 
 import pytest
 
 from vigilai.tasks.bbq_brazil.bbq_brazil import bbq_brazil
+from vigilai.tasks.choice_parse import choice_sigil_tolerant
 from vigilai.tasks.bbq_brazil.dataset import ALL_SCENARIOS
 from vigilai.tasks.bbq_brazil.dataset import bbq_brazil_dataset
 from vigilai.tasks.bbq_brazil.dataset import bbq_brazil_samples
@@ -224,14 +224,21 @@ def _single_sample_eval(sample: Sample, answer_letter: str) -> float:
     """Run the reused BBQ scoring path on one sample with a forced model answer.
 
     Builds a one-sample task with the *same* solver/scorer the real ``bbq_brazil`` task uses
-    (``multiple_choice()`` + ``choice()``), drives it with a mock model that emits
-    ``ANSWER: <answer_letter>``, and returns the resulting accuracy. A one-sample dataset
-    guarantees the forced output aligns with the sample (no ordering ambiguity).
+    (``multiple_choice()`` + :func:`~vigilai.tasks.choice_parse.choice_sigil_tolerant`, which
+    delegates the grading to the unmodified upstream ``choice()``), drives it with a mock model
+    that emits ``ANSWER: <answer_letter>``, and returns the resulting accuracy. A one-sample
+    dataset guarantees the forced output aligns with the sample (no ordering ambiguity).
+
+    The scorer here tracks the task's on purpose: this helper is the file's evidence that the
+    *reused* scorer grades the shuffled letters correctly, and it would stop being that if it
+    scored through a path the task no longer uses. The sigil handling itself is covered in
+    ``tests/test_choice_parse.py``; nothing in this file emits a sigil, so every call takes the
+    ``strict`` path and the numbers are the same as before the wrapper existed.
     """
     task = Task(
         dataset=MemoryDataset([sample]),
         solver=[multiple_choice()],
-        scorer=choice(),
+        scorer=choice_sigil_tolerant(),
     )
     model = get_model(
         "mockllm/model",

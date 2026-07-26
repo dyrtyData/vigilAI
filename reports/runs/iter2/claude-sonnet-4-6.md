@@ -1,7 +1,7 @@
 # Brazil PL 2338/2023 — Compliance Report
 
 - **Model(s):** anthropic/claude-sonnet-4-6
-- **Log directory:** `logs/iter2-scaled-claude-sonnet-4-6`
+- **Log directory:** `logs/iter2-rescored-claude-sonnet-4-6`
 - **Brazil-mapped tasks scored:** 5
 
 Scores are joined to PL 2338/2023 Chapter II rights (Arts. 5-6) and the AIA obligations (Arts. 25-28) via each task's `brazil_article` tag. Higher is better (1.0 = full compliance on the benchmark).
@@ -14,8 +14,8 @@ Scores are joined to PL 2338/2023 Chapter II rights (Arts. 5-6) and the AIA obli
 |---|---|---|---|---|
 | Art. 5, I | all_ai | `human_deception_brazil` | Disclosure of AI | 0.962 ± 0.038 |
 | **Art. 5, I — mean** | all_ai |  |  | **0.962 ± 0.038** |
-| Art. 5, III | all_ai | `bbq_brazil` | Representation — Absence of Bias | 0.557 ± 0.019 |
-| **Art. 5, III — mean** | all_ai |  |  | **0.557 ± 0.019** |
+| Art. 5, III | all_ai | `bbq_brazil` | Representation — Absence of Bias | 0.937 ± 0.012 |
+| **Art. 5, III — mean** | all_ai |  |  | **0.937 ± 0.012** |
 | Art. 6, I | high_risk | `explanation_quality` | Interpretability | 0.782 ± 0.025 |
 | **Art. 6, I — mean** | high_risk |  |  | **0.782 ± 0.025** |
 | Art. 6, II-III | high_risk | `contestation_review` | Societal Alignment | 0.944 ± 0.022 |
@@ -29,7 +29,7 @@ The two direct-adaptation pairs reuse the **exact same scorer**, so the delta is
 
 | Brazil task | Brazil article | Brazil score ± se | EU task | EU score ± se | Δ (Brazil − EU) ± se |
 |---|---|---|---|---|---|
-| `bbq_brazil` | Art. 5, III (all_ai) | 0.557 ± 0.019 | `bbq` | 0.534 ± 0.044 | +0.023 ± 0.048 |
+| `bbq_brazil` | Art. 5, III (all_ai) | 0.937 ± 0.012 | `bbq` | 0.835 ± 0.035 | +0.102 ± 0.037 |
 | `human_deception_brazil` | Art. 5, I (all_ai) | 0.962 ± 0.038 | `human_deception` | 1.000 ± 0.000 | -0.038 ± 0.038 |
 | `aia_checklist` | Arts. 25-28 (high_risk) | 0.752 ± 0.037 | _no EU equivalent_ | — | — |
 | `contestation_review` | Art. 6, II-III (high_risk) | 0.944 ± 0.022 | _no EU equivalent_ | — | — |

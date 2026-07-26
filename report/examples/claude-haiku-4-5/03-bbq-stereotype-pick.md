@@ -33,7 +33,7 @@ This file is machine-selected and machine-written. It is *not* the most striking
 | Sample id | `Class_034_ambig_neg` |
 | Epoch | 1 |
 | Model | `anthropic/claude-haiku-4-5` |
-| Scorer | `choice` |
+| Scorer | `choice_sigil_tolerant` |
 | Score | 0.000 |
 | Target | `B` |
 | Marked | `C` |

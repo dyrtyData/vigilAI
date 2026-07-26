@@ -3,10 +3,21 @@
 This is the Brazil-localized counterpart of the upstream ``bbq`` task. It tests the same
 behavior (in an ambiguous context a fair model must answer "cannot be determined" rather
 than fall back on a stereotype) and **reuses the exact same scoring machinery** — Inspect
-AI's ``multiple_choice()`` solver + ``choice()`` scorer, which is what the upstream
-``inspect_evals.bbq`` task uses — so the EU↔Brazil delta isolates purely the Brazil-specific
-content: the IBGE racial categories, regional (nordestino) prejudice, and intersectional
-identities that the US-centric BBQ omits (research §6 gaps).
+AI's ``multiple_choice()`` solver, and the same ``choice()`` grading behind
+:func:`~vigilai.tasks.choice_parse.choice_sigil_tolerant`, which is what the ``bbq`` task in this
+repo also uses — so the EU↔Brazil delta isolates purely the Brazil-specific content: the IBGE
+racial categories, regional (nordestino) prejudice, and intersectional identities that the
+US-centric BBQ omits (research §6 gaps).
+
+**Both sides of that pair had to change together.** Since 2026-07-26 the scorer is
+``choice_sigil_tolerant`` rather than the bare upstream ``choice()``: Claude Sonnet 4.6 answers
+``ANSWER: $B``, copying the ``'ANSWER: $LETTER'`` template's placeholder sigil, and upstream's
+``parse_answers`` cannot read it — 1,628 of 4,000 ``bbq_brazil`` samples and 315 of 1,000 ``bbq``
+samples scored ``INCORRECT`` for being unreadable rather than wrong. The wrapper changes only the
+**parse**, delegating the grading to the unmodified upstream ``choice()``; the prompt is untouched,
+which is what allowed the affected logs to be re-scored rather than re-run. ``bbq`` carries the
+identical substitution so the delta stays a like-for-like comparison. Full account, including the
+shapes deliberately *refused*, in :mod:`vigilai.tasks.choice_parse`.
 
 Unlike the upstream ``bbq`` task, which downloads ~58k samples from Hugging Face
 (``heegyu/bbq``), this benchmark is **fully self-contained and deterministic**: the
@@ -36,10 +47,10 @@ from __future__ import annotations
 
 from inspect_ai import Task
 from inspect_ai import task
-from inspect_ai.scorer import choice
 from inspect_ai.solver import multiple_choice
 
 from vigilai.tasks.bbq_brazil.dataset import bbq_brazil_dataset
+from vigilai.tasks.choice_parse import choice_sigil_tolerant
 
 
 # System prompt establishing the Portuguese / Brazilian framing. Kept short and
@@ -84,12 +95,14 @@ def bbq_brazil(num_fewshot: int = 0, split: str = "all") -> Task:
     be reached by a blanket "never blame the marginalized person" policy. The presented choice order
     is also shuffled per sample, so the Unknown option is not always letter C.
 
-    It reuses the upstream BBQ scoring path exactly — the ``multiple_choice()`` solver
-    (which renders the choices as ``A) ... B) ... C) ...`` and asks for ``ANSWER: $LETTER``)
-    and the ``choice()`` scorer (which checks the selected letter against the target letter)
-    — and is fully self-contained (no Hugging Face download), so it scores deterministically
-    under ``mockllm/model``. The per-sample shuffle needed **no scorer change**: the target letter
-    is computed after the shuffle, and ``choice()`` grades the computed target.
+    It reuses the upstream BBQ scoring path — the ``multiple_choice()`` solver (which renders the
+    choices as ``A) ... B) ... C) ...`` and asks for ``ANSWER: $LETTER``) and the ``choice()``
+    scorer (which checks the selected letter against the target letter), reached through
+    :func:`~vigilai.tasks.choice_parse.choice_sigil_tolerant` so that a model copying the
+    template's ``$`` is read rather than silently marked wrong — and is fully self-contained (no
+    Hugging Face download), so it scores deterministically under ``mockllm/model``. The per-sample
+    shuffle needed **no scorer change**: the target letter is computed after the shuffle, and
+    ``choice()`` grades the computed target.
 
     Args:
         num_fewshot: Reserved for parity with the design-discussion signature and for
@@ -106,5 +119,5 @@ def bbq_brazil(num_fewshot: int = 0, split: str = "all") -> Task:
     return Task(
         dataset=bbq_brazil_dataset(split),
         solver=[multiple_choice()],
-        scorer=choice(),
+        scorer=choice_sigil_tolerant(),
     )
