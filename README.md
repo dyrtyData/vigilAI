@@ -792,7 +792,7 @@ between two stated measures — **not** an error, a disagreement rate, or a corr
 is `sqrt(se² + judge_se²)`, an **upper bound**, because both scorers grade the same samples in the
 same run and their errors are positively correlated. (Per-sample agreement — mean |Δ|, rank
 correlation, direction disagreements — needs the sample records, which the header-only aggregator
-never loads; that arrives in Phase 7.)
+never loads; that is `--judge-agreement`, [below](#per-sample-agreement--judge-agreement).)
 
 **What the judge is actually asked** is the part that decides whether the number means anything. A
 judge that is a fuzzier keyword matcher answers nothing, so the instructions are written against
@@ -812,6 +812,64 @@ labelled**, so the table carries a Split column read off the log's own `task_arg
 header names the grader and its config, so the number is reproducible from the artifact alone.
 `--json` gains a `deterministic_vs_judge` array carrying the same fields plus
 `delta_stderr_is_upper_bound`.
+
+### Per-sample agreement — `--judge-agreement`
+
+The judge table above compares two *aggregates*. `vigilai report logs/<run> --judge-agreement`
+compares the two scorers **on the same sample**, and — because the judge writes a per-element
+`SUBSTANTIVE` / `ABSENT` verdict line before its letter — **on the same rubric element**:
+
+```bash
+uv run vigilai report logs/<run> --judge-agreement          # Markdown, section appended
+uv run vigilai report logs/<run> --json --judge-agreement   # adds a `judge_agreement` key
+```
+
+It reports, per task and pooled, and for the **held-out slice and the full set separately and
+always labelled** (Resolution 1): mean |Δ|, mean signed Δ, Spearman rank correlation, the count of
+samples landing on **opposite sides of 0.5** ("direction disagreements"), and the Δ sign
+breakdown. Then the per-element table, which is the number that actually answers reviewer ask #2 —
+`Cue-list only` is the **keyword-surface residue** (the detector credited the element, the judge
+reading for a substantive commitment did not), and `Judge only` points the other way, at the
+*scorer* rather than the model. A task-level Δ of 0.2 could be a fifth of samples disagreeing
+everywhere or every sample disagreeing on one element; those are different findings and only the
+per-element view separates them.
+
+Four things the section states about itself, because each is a way the number could be misread:
+
+- **The two columns are different measures** (element fraction vs. fraction graded `C`), so |Δ| is
+  a distance between two stated measures — never an error and never a disagreement rate.
+- **Epochs are reduced per sample by the mean** before the per-sample statistics, matching
+  Inspect's own default reducer, so `Samples` is the number of samples and not the number of
+  generations — a `--epochs 10` run does not report a tenfold *n*. The per-element table is over
+  unreduced rows, because a boolean verdict has no mean.
+- **Spearman is `—`, not `0.000`, when it is undefined** (fewer than two samples, or either side
+  constant — the normal case under `mockllm/model`).
+- **Grader format compliance is reported**: rows whose explanation carried no parsable verdict
+  line, and rows whose `SUBSTANTIVE COUNT` contradicts their own verdict lines. Both are findings
+  about the grader — the letter is defined as a function of the count — not parser noise.
+
+This is the **one flag that leaves the header-only path**: it reads every sample of every log in
+the directory, so it is materially slower than the default report on a scaled run and is opt-in
+for that reason. `src/vigilai/report/samples.py` is the only module in the package that loads
+samples at all, and a test walks the AST of the whole package to keep it that way. It is
+deliberately **not** offered with `--html`, for the reason transcripts are not in the scorecard
+either: the HTML view's job is to stand alone as the Art. 28 *public conclusions* artifact, and
+per-sample scorer agreement is evidence for the methodology argument, not a compliance conclusion.
+
+### Transcript extraction — `tools/extract_examples.py`
+
+```bash
+uv run python tools/extract_examples.py logs/<run> [logs/<other-run> ...] [--out report/examples] [--html]
+```
+
+Pulls the paper's three main-text transcripts out of real logs by **stated deterministic rules**,
+prints the rule it applied and the `sample_id` it selected, and writes each transcript — prompt,
+completion, score, and the per-element rubric-hit breakdown — with its own rule quoted verbatim
+inside it. A rule that matches nothing says so instead of being relaxed. Re-running over the same
+logs is byte-identical, no absolute path or generation timestamp reaches the output, and every
+rendered document is scanned for API-key shapes and local `.env` values **before** anything is
+written. The rules, their dependencies, and the reason each is shaped the way it is:
+[`report/examples/README.md`](report/examples/README.md).
 
 Every report (Markdown, JSON, and HTML) also includes a **Brazil compliance coverage map** across
 **all nine** COMPL-AI technical requirements — not just the four (of nine) that carry a bespoke

@@ -24,6 +24,7 @@ network access is needed.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 import statistics
@@ -47,7 +48,10 @@ from inspect_ai.scorer import stderr
 from inspect_ai.solver import generate
 
 from inspect_ai._util.registry import registry_info
+from typer.testing import CliRunner
 
+from vigilai._cli import app as cli_app
+from vigilai.report import samples as vigilai_report_samples
 from vigilai.report.brazil_report import _DETERMINISTIC_SCORERS
 from vigilai.report.brazil_report import _gap_items_by_sector_from_attribs
 from vigilai.report.brazil_report import _JUDGE_ROLE
@@ -63,6 +67,19 @@ from vigilai.report.brazil_report import EU_BRAZIL_PAIRS
 from vigilai.report.brazil_report import NINE_TECHNICAL_REQUIREMENTS
 from vigilai.report.brazil_report import SideBySideRow
 from vigilai.report.brazil_report import TaskScore
+from vigilai.report.samples import agreement_to_dict
+from vigilai.report.samples import DETERMINISTIC_SCORER_NAMES
+from vigilai.report.samples import first_epoch
+from vigilai.report.samples import JUDGE_SCORER_NAME as samples_JUDGE_SCORER_NAME
+from vigilai.report.samples import judge_agreement
+from vigilai.report.samples import judge_agreement_by_split
+from vigilai.report.samples import load_samples
+from vigilai.report.samples import parse_judge_verdicts
+from vigilai.report.samples import render_agreement_markdown
+from vigilai.report.samples import sample_sort_key
+from vigilai.report.samples import SampleRecord
+from vigilai.report.samples import spearman
+from vigilai.report.samples import SPLIT_HELD_OUT as samples_SPLIT_HELD_OUT
 from vigilai.tasks.aia_checklist.checklist import aia_checklist_scorer
 from vigilai.tasks.contestation_review.rubric import contestation_scorer
 from vigilai.tasks.contestation_review.rubric import CONTESTATION_RUBRIC
@@ -2057,3 +2074,634 @@ class TestPerSectorGapItemsInTheReport:
         health = sector_report.sector_for("health_anvisa")
         assert health is not None
         assert health.gap_items == tuple(sorted(_GAP_ITEMS_FIXTURE.split(",")))
+
+
+# =========================================================================================
+# Phase 7 — the sample-level layer, and the header-only guarantee it must not break.
+# =========================================================================================
+def _record(
+    *,
+    task: str = "explanation_quality",
+    sample_id: str = "1",
+    epoch: int = 1,
+    deterministic: float | None = None,
+    judge: float | None = None,
+    split: str | None = SPLIT_HELD_OUT,
+    elements: dict[str, bool] | None = None,
+    judge_explanation: str | None = None,
+    grader: str | None = "mockllm/model",
+) -> SampleRecord:
+    """A hand-built :class:`SampleRecord` for the pure agreement-arithmetic tests."""
+    scores: dict[str, float | None] = {}
+    metadata: dict[str, dict[str, Any]] = {}
+    explanations: dict[str, str | None] = {}
+    if deterministic is not None:
+        scores["rubric_scorer"] = deterministic
+        metadata["rubric_scorer"] = {"elements_present": dict(elements or {})}
+        explanations["rubric_scorer"] = None
+    if judge is not None:
+        scores[JUDGE_SCORER_NAME] = judge
+        metadata[JUDGE_SCORER_NAME] = {"judge_grader": grader} if grader else {}
+        explanations[JUDGE_SCORER_NAME] = judge_explanation
+    return SampleRecord(
+        task=task,
+        sample_id=sample_id,
+        epoch=epoch,
+        model="mockllm/model",
+        prompt="p",
+        completion="c",
+        target="t",
+        choices=(),
+        scores=scores,
+        raw_scores=dict(scores),
+        answers={name: None for name in scores},
+        explanations=explanations,
+        score_metadata=metadata,
+        metadata={"split": split} if split else {},
+    )
+
+
+class TestSampleSorting:
+    """"The lowest ``sample_id``" is a rule, so its ordering has to be one too."""
+
+    def test_integer_ids_sort_numerically(self) -> None:
+        assert sorted(["10", "9", "2"], key=sample_sort_key) == ["2", "9", "10"]
+
+    def test_string_ids_sort_lexicographically_after_integer_ids(self) -> None:
+        assert sorted(["Race_010", "3", "Class_001"], key=sample_sort_key) == [
+            "3",
+            "Class_001",
+            "Race_010",
+        ]
+
+
+class TestSpearman:
+    """The correlation is hand-rolled, so it is checked against ``scipy.stats``."""
+
+    @pytest.mark.parametrize(
+        "xs,ys",
+        [
+            ([1.0, 2.0, 3.0, 4.0], [1.0, 2.0, 3.0, 4.0]),
+            ([1.0, 2.0, 3.0, 4.0], [4.0, 3.0, 2.0, 1.0]),
+            ([0.0, 0.5, 0.5, 1.0], [0.0, 1.0, 0.5, 0.5]),  # ties on both sides
+            ([0.1, 0.9, 0.4, 0.4, 0.2], [1.0, 0.0, 0.5, 0.5, 0.5]),
+        ],
+    )
+    def test_matches_scipy(self, xs: list[float], ys: list[float]) -> None:
+        from scipy.stats import spearmanr
+
+        expected = float(spearmanr(xs, ys).statistic)
+        actual = spearman(xs, ys)
+        assert actual is not None
+        assert actual == pytest.approx(expected)
+
+    def test_undefined_rather_than_zero_when_a_side_is_constant(self) -> None:
+        """``mockllm/model`` answers identically every time, so this is the normal mock case —
+        printing ``0.000`` would be reporting a correlation nothing measured."""
+        assert spearman([0.5, 0.5, 0.5], [0.0, 0.5, 1.0]) is None
+
+    def test_undefined_below_two_pairs(self) -> None:
+        assert spearman([1.0], [1.0]) is None
+        assert spearman([], []) is None
+
+
+class TestJudgeVerdictParsing:
+    """Phase 6 makes the grader write per-element verdicts; this is what reads them back."""
+
+    def test_parses_the_required_format(self) -> None:
+        verdicts = parse_judge_verdicts(
+            "- criteria_used: SUBSTANTIVE — a ratio of 45% is named.\n"
+            "- data_considered: ABSENT — no source identified.\n"
+            "SUBSTANTIVE COUNT: 1/2\n"
+            "GRADE: P\n",
+            ["criteria_used", "data_considered"],
+        )
+        assert verdicts.elements == {"criteria_used": True, "data_considered": False}
+        assert (verdicts.stated_count, verdicts.stated_total) == (1, 2)
+        assert verdicts.count_matches_verdicts is True
+
+    def test_tolerates_decoration_a_real_grader_adds(self) -> None:
+        """Numbered, bolded, backticked, plain hyphen instead of em dash — all still the format
+        the instructions asked for, and refusing them would report a grader failure that is not
+        one."""
+        verdicts = parse_judge_verdicts(
+            "1. **criteria_used**: SUBSTANTIVE - named.\n"
+            "  * `data_considered` : ABSENT – nothing.\n",
+            ["criteria_used", "data_considered"],
+        )
+        assert verdicts.elements == {"criteria_used": True, "data_considered": False}
+
+    def test_an_invented_key_is_reported_not_believed(self) -> None:
+        verdicts = parse_judge_verdicts(
+            "- criteria_used: SUBSTANTIVE — ok.\n- fairness_vibes: SUBSTANTIVE — ok.\n",
+            ["criteria_used"],
+        )
+        assert verdicts.elements == {"criteria_used": True}
+        assert verdicts.unmatched_keys == ("fairness_vibes",)
+
+    def test_the_first_verdict_for_an_element_wins(self) -> None:
+        """Stated rather than "last wins", so the parse cannot depend on how chatty the grader
+        was in its closing summary."""
+        verdicts = parse_judge_verdicts(
+            "- criteria_used: ABSENT — nothing.\nIn summary:\n- criteria_used: SUBSTANTIVE — ok.\n",
+            ["criteria_used"],
+        )
+        assert verdicts.elements == {"criteria_used": False}
+
+    def test_a_count_contradicting_the_verdicts_is_detected(self) -> None:
+        """The letter is defined as a function of the count, so this means the grade does not
+        follow from the grader's own stated findings."""
+        verdicts = parse_judge_verdicts(
+            "- criteria_used: ABSENT — nothing.\nSUBSTANTIVE COUNT: 6/6\nGRADE: C\n",
+            ["criteria_used"],
+        )
+        assert verdicts.count_matches_verdicts is False
+
+    def test_no_explanation_parses_to_nothing(self) -> None:
+        assert not parse_judge_verdicts(None, ["criteria_used"]).parsed
+        assert not parse_judge_verdicts("GRADE: C", ["criteria_used"]).parsed
+
+
+class TestJudgeAgreement:
+    """The statistics themselves, on hand-built records with hand-computable answers."""
+
+    def test_mean_absolute_and_signed_delta(self) -> None:
+        stats = judge_agreement(
+            [
+                _record(sample_id="1", deterministic=1.0, judge=0.0),
+                _record(sample_id="2", deterministic=0.5, judge=1.0),
+                _record(sample_id="3", deterministic=0.5, judge=0.5),
+            ]
+        )
+        assert stats.n == 3
+        assert stats.mean_abs_delta == pytest.approx((1.0 + 0.5 + 0.0) / 3)
+        assert stats.mean_delta == pytest.approx((1.0 - 0.5 + 0.0) / 3)
+
+    def test_direction_disagreements_are_opposite_sides_of_the_midpoint(self) -> None:
+        stats = judge_agreement(
+            [
+                _record(sample_id="1", deterministic=1.0, judge=0.0),   # opposite sides
+                _record(sample_id="2", deterministic=0.0, judge=1.0),   # opposite sides
+                _record(sample_id="3", deterministic=1.0, judge=0.75),  # same side
+                _record(sample_id="4", deterministic=1.0, judge=0.5),   # midpoint: never counted
+            ]
+        )
+        assert stats.direction_disagreements == 2
+
+    def test_the_sign_breakdown_is_reported_alongside(self) -> None:
+        """"Disagree in direction" has two reasonable readings; both are reported rather than
+        one being silently chosen."""
+        stats = judge_agreement(
+            [
+                _record(sample_id="1", deterministic=1.0, judge=0.0),
+                _record(sample_id="2", deterministic=0.0, judge=1.0),
+                _record(sample_id="3", deterministic=0.5, judge=0.5),
+            ]
+        )
+        assert (stats.deterministic_higher, stats.judge_higher, stats.ties) == (1, 1, 1)
+
+    def test_epochs_are_reduced_per_sample_by_the_mean(self) -> None:
+        """Phases 8-9 run ``--epochs 10``. Counting each generation as a sample would inflate
+        ``n`` tenfold; the mean is what Inspect's own default reducer applies before the headline
+        metric, so the two figures stay comparable."""
+        stats = judge_agreement(
+            [
+                _record(sample_id="1", epoch=1, deterministic=1.0, judge=0.0),
+                _record(sample_id="1", epoch=2, deterministic=0.0, judge=0.0),
+            ]
+        )
+        assert stats.n == 1
+        assert stats.n_rows == 2
+        assert stats.mean_delta == pytest.approx(0.5)
+
+    def test_a_sample_scored_by_only_one_scorer_is_excluded(self) -> None:
+        stats = judge_agreement(
+            [
+                _record(sample_id="1", deterministic=1.0, judge=0.0),
+                _record(sample_id="2", deterministic=1.0),
+                _record(sample_id="3", judge=1.0),
+            ]
+        )
+        assert stats.n == 1
+
+    def test_an_empty_slice_is_well_formed_rather_than_an_exception(self) -> None:
+        stats = judge_agreement([])
+        assert (stats.n, stats.n_rows) == (0, 0)
+        assert stats.mean_abs_delta is None and stats.spearman is None
+
+    def test_per_element_agreement_is_the_finer_grained_answer(self) -> None:
+        """Reviewer ask #2's real question. ``deterministic_only`` is the keyword-surface
+        residue: the cue list credited the element, the judge did not."""
+        explanation = (
+            "- criteria_used: ABSENT — nothing named.\n"
+            "- contestation_path: SUBSTANTIVE — channel, deadline and reviewer given.\n"
+            "SUBSTANTIVE COUNT: 1/2\nGRADE: P\n"
+        )
+        stats = judge_agreement(
+            [
+                _record(
+                    sample_id="1",
+                    deterministic=1.0,
+                    judge=0.5,
+                    elements={"criteria_used": True, "contestation_path": True},
+                    judge_explanation=explanation,
+                )
+            ]
+        )
+        by_element = {row.element: row for row in stats.element_agreement}
+        assert by_element["criteria_used"].deterministic_only == 1
+        assert by_element["criteria_used"].agreement_rate == pytest.approx(0.0)
+        assert by_element["contestation_path"].both_credit == 1
+        assert by_element["contestation_path"].agreement_rate == pytest.approx(1.0)
+
+    def test_a_judge_row_with_no_verdict_lines_is_counted_as_a_grader_finding(self) -> None:
+        stats = judge_agreement(
+            [
+                _record(
+                    sample_id="1",
+                    deterministic=1.0,
+                    judge=0.0,
+                    elements={"criteria_used": True},
+                    judge_explanation="I think this is bad. GRADE: I",
+                )
+            ]
+        )
+        assert stats.judge_unparsed_rows == 1
+        assert stats.element_agreement == ()
+
+
+class TestJudgeAgreementSplits:
+    """Resolution 1 — held-out **and** full set, both labelled, always."""
+
+    def _records(self) -> list[SampleRecord]:
+        return [
+            _record(sample_id="1", deterministic=1.0, judge=0.0, split=SPLIT_HELD_OUT),
+            _record(sample_id="2", deterministic=1.0, judge=1.0, split="train"),
+            _record(
+                task="contestation_review",
+                sample_id="1",
+                deterministic=0.5,
+                judge=0.0,
+                split=SPLIT_HELD_OUT,
+            ),
+        ]
+
+    def test_both_slices_are_emitted_and_labelled(self) -> None:
+        rows = judge_agreement_by_split(self._records())
+        assert {row.label for row in rows} == {"full_set", "held_out"}
+
+    def test_each_slice_carries_a_per_task_row_and_a_pooled_row(self) -> None:
+        rows = judge_agreement_by_split(self._records())
+        full = [row for row in rows if row.label == "full_set"]
+        assert [row.task for row in full] == [
+            "contestation_review",
+            "explanation_quality",
+            None,
+        ]
+        assert full[-1].n == 3
+
+    def test_the_held_out_slice_excludes_train_samples(self) -> None:
+        rows = judge_agreement_by_split(self._records())
+        held_out = next(row for row in rows if row.label == "held_out" and row.task is None)
+        assert held_out.n == 2
+
+    def test_nothing_at_all_when_no_sample_was_judged(self) -> None:
+        assert judge_agreement_by_split([_record(sample_id="1", deterministic=1.0)]) == []
+
+
+class TestAgreementRendering:
+    """The Markdown the ``--judge-agreement`` flag prints."""
+
+    def test_names_both_slices_and_the_grader(self) -> None:
+        md = render_agreement_markdown(
+            [
+                _record(sample_id="1", deterministic=1.0, judge=0.0),
+                _record(sample_id="2", deterministic=0.0, judge=0.0, split="train"),
+            ]
+        )
+        assert "| full_set |" in md
+        assert "| held_out |" in md
+        assert "**Grader:** `mockllm/model`" in md
+
+    def test_states_that_the_two_columns_are_different_measures(self) -> None:
+        """The standing cross-phase correction: the delta is between two *stated* measures and
+        must never read as an error or a disagreement rate."""
+        md = render_agreement_markdown([_record(deterministic=1.0, judge=0.0)])
+        assert "different measures" in md
+        assert "never an error and never a" in md
+
+    def test_states_the_epoch_reduction_and_the_midpoint_rule(self) -> None:
+        md = render_agreement_markdown([_record(deterministic=1.0, judge=0.0)])
+        assert "Epochs are reduced per sample by the mean" in md
+        assert "opposite sides of 0.5" in md
+
+    def test_a_run_with_no_judge_says_so_instead_of_rendering_an_empty_table(self) -> None:
+        md = render_agreement_markdown([_record(deterministic=1.0)])
+        assert "No sample carries both" in md
+        assert "|---|" not in md
+
+    def test_the_bound_grader_role_wins_over_the_per_sample_stamp_for_display(self) -> None:
+        """Same precedence the report header uses. The stamp alone renders as ``model`` for
+        ``mockllm/model`` — true, but unreadable in a published artifact."""
+        record = dataclasses.replace(
+            _record(deterministic=1.0, judge=0.0, grader="model"),
+            judge_grader_role="mockllm/model",
+        )
+        assert record.judge_grader == "model"
+        assert record.judge_grader_display == "mockllm/model"
+        assert "**Grader:** `mockllm/model`" in render_agreement_markdown([record])
+
+    def test_the_format_compliance_count_is_not_double_counted_across_slices(self) -> None:
+        """``held_out`` is a subset of ``full_set`` and both carry a pooled row, so summing them
+        would report twice as many unparsed rows as the run has."""
+        records = [
+            _record(sample_id="1", deterministic=1.0, judge=0.0, split=SPLIT_HELD_OUT),
+            _record(sample_id="2", deterministic=1.0, judge=0.0, split=SPLIT_HELD_OUT),
+        ]
+        md = render_agreement_markdown(records)
+        assert "over the 2 judged row(s) of the full set): 2 carried no parsable" in md
+
+    def test_the_json_view_names_both_scales(self) -> None:
+        rows = agreement_to_dict([_record(deterministic=1.0, judge=0.0)])
+        assert rows
+        assert rows[0]["deterministic_measure"].startswith("mean fraction")
+        assert rows[0]["judge_measure"].startswith("accuracy")
+
+
+class TestHeaderOnlyGuarantee:
+    """The default report path must never load samples — a property, not a comment.
+
+    Two independent checks, because either alone is weak: a runtime spy proves *this* code path
+    does not, and a source-level AST sweep proves no other call site in the package can.
+    """
+
+    def test_build_brazil_report_never_reads_samples(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        log_dir = str(tmp_path / "header_only_logs")
+        _run_samples_into(
+            log_dir,
+            _multi_sample_task(
+                "explanation_quality",
+                "Interpretability",
+                samples=4,
+                article="Art. 6, I",
+                scope="high_risk",
+            ),
+            ["1.0", "1.0", "1.0", "0.0"],
+        )
+
+        import vigilai.report.brazil_report as brazil_report
+
+        real = brazil_report.read_eval_log
+        calls: list[bool] = []
+
+        def spy(*args: Any, **kwargs: Any) -> Any:
+            calls.append(bool(kwargs.get("header_only")))
+            log = real(*args, **kwargs)
+            assert log.samples is None, "the aggregator received a log carrying samples"
+            return log
+
+        monkeypatch.setattr(brazil_report, "read_eval_log", spy)
+        build_brazil_report(log_dir)
+        assert calls, "the spy never fired — the test is not exercising the read path"
+        assert all(calls), "build_brazil_report read a log without header_only=True"
+
+    def test_no_module_but_samples_py_loads_samples(self) -> None:
+        """AST sweep of the whole package: every ``read_eval_log`` call outside
+        ``vigilai/report/samples.py`` must pass ``header_only=True`` literally. This is the check
+        that survives a future refactor moving the read somewhere else."""
+        import ast
+
+        package = Path(vigilai_report_samples.__file__).resolve().parents[2]
+        offenders: list[str] = []
+        for path in sorted(package.rglob("*.py")):
+            if path.name == "samples.py" and path.parent.name == "report":
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                func = node.func
+                name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", None)
+                if name not in {"read_eval_log", "read_eval_log_async", "read_eval_log_samples"}:
+                    continue
+                header_only = next(
+                    (kw for kw in node.keywords if kw.arg == "header_only"), None
+                )
+                if (
+                    header_only is None
+                    or not isinstance(header_only.value, ast.Constant)
+                    or header_only.value.value is not True
+                ):
+                    offenders.append(f"{path.relative_to(package)}:{node.lineno}")
+        assert offenders == [], (
+            "these call sites load samples outside vigilai/report/samples.py, which is "
+            f"supposed to be the only one: {offenders}"
+        )
+
+    def test_the_samples_module_constants_mirror_the_task_modules(self) -> None:
+        """Same discipline as the report's own constants: ``samples.py`` must not import the task
+        package, so the strings are pinned against it instead."""
+        assert samples_JUDGE_SCORER_NAME == JUDGE_SCORER_NAME
+        assert set(DETERMINISTIC_SCORER_NAMES) == set(_DETERMINISTIC_SCORERS)
+        assert samples_SPLIT_HELD_OUT == SPLIT_HELD_OUT
+
+
+class TestLoadSamples:
+    """The reader itself, over a real log."""
+
+    def test_reads_prompt_completion_and_scores(self, tmp_path: Path) -> None:
+        log_dir = str(tmp_path / "load_logs")
+        _run_samples_into(
+            log_dir,
+            _multi_sample_task(
+                "explanation_quality",
+                "Interpretability",
+                samples=2,
+                article="Art. 6, I",
+                scope="high_risk",
+            ),
+            ["0.25", "0.75"],
+        )
+        records = load_samples(log_dir)
+        assert [r.task for r in records] == ["explanation_quality"] * 2
+        assert {r.completion for r in records} == {"0.25", "0.75"}
+        assert all(r.prompt == "q" for r in records)
+        assert {r.deterministic_score for r in records} == {0.25, 0.75}
+        assert all(r.model == "mockllm/model" for r in records)
+        assert all(r.log_file and r.log_file.endswith(".eval") for r in records)
+
+    def test_the_tasks_filter_selects(self, tmp_path: Path) -> None:
+        log_dir = str(tmp_path / "filter_logs")
+        for name, article in (("explanation_quality", "Art. 6, I"), ("bold", "Art. 5, III")):
+            _run_samples_into(
+                log_dir,
+                _multi_sample_task(
+                    name,
+                    "Interpretability",
+                    samples=2,
+                    article=article,
+                    scope="high_risk",
+                ),
+                ["0.5", "0.5"],
+            )
+        assert {r.task for r in load_samples(log_dir)} == {"explanation_quality", "bold"}
+        assert {r.task for r in load_samples(log_dir, tasks=["bold"])} == {"bold"}
+        assert load_samples(log_dir, tasks=["nope"]) == []
+
+    def test_every_epoch_is_returned_and_first_epoch_filters(self, tmp_path: Path) -> None:
+        """``--epochs 10`` is Phase 8's config, so multi-epoch logs are the normal case and the
+        reader must not quietly keep one row per id."""
+        log_dir = str(tmp_path / "epoch_logs")
+        a_task = _multi_sample_task(
+            "explanation_quality",
+            "Interpretability",
+            samples=2,
+            article="Art. 6, I",
+            scope="high_risk",
+        )
+        model = get_model(
+            "mockllm/model",
+            custom_outputs=[ModelOutput.from_content("mockllm/model", "0.5") for _ in range(4)],
+        )
+        logs = inspect_eval(a_task, model=model, epochs=2, display="none", log_dir=log_dir)
+        assert logs[0].status == "success", logs[0].error
+        records = load_samples(log_dir)
+        assert len(records) == 4
+        assert sorted(r.epoch for r in records) == [1, 1, 2, 2]
+        assert len(first_epoch(records)) == 2
+
+    def test_records_are_sorted_deterministically(self, tmp_path: Path) -> None:
+        log_dir = str(tmp_path / "sorted_logs")
+        _run_samples_into(
+            log_dir,
+            _multi_sample_task(
+                "explanation_quality",
+                "Interpretability",
+                samples=12,
+                article="Art. 6, I",
+                scope="high_risk",
+            ),
+            ["0.5"] * 12,
+        )
+        ids = [r.sample_id for r in load_samples(log_dir)]
+        assert ids == [str(i) for i in range(1, 13)]  # 2 before 10, not after
+
+
+class TestJudgeAgreementCli:
+    """``vigilai report --judge-agreement`` — the flag, its exclusions, and its slowness."""
+
+    def test_the_flag_appends_the_section_to_the_markdown_report(
+        self, tmp_path: Path
+    ) -> None:
+        runner = CliRunner()
+        log_dir = str(tmp_path / "cli_judge_logs")
+        _build_cli_judge_log_dir(log_dir)
+        result = runner.invoke(cli_app, ["report", log_dir, "--judge-agreement"])
+        assert result.exit_code == 0, result.output
+        assert "## Compliance by Brazil article" in result.output
+        assert "## Per-sample deterministic ↔ LLM-judge agreement" in result.output
+        assert "| full_set |" in result.output
+
+    def test_the_default_report_is_unchanged_without_the_flag(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        log_dir = str(tmp_path / "cli_default_logs")
+        _build_cli_judge_log_dir(log_dir)
+        plain = runner.invoke(cli_app, ["report", log_dir])
+        assert plain.exit_code == 0, plain.output
+        assert "Per-sample deterministic" not in plain.output
+        assert plain.output.strip() == build_brazil_report(log_dir).to_markdown().strip()
+
+    def test_json_gains_exactly_one_additive_key(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        log_dir = str(tmp_path / "cli_json_logs")
+        _build_cli_judge_log_dir(log_dir)
+        plain = json.loads(runner.invoke(cli_app, ["report", log_dir, "--json"]).output)
+        with_flag = json.loads(
+            runner.invoke(
+                cli_app, ["report", log_dir, "--json", "--judge-agreement"]
+            ).output
+        )
+        assert set(with_flag) - set(plain) == {"judge_agreement"}
+        assert {row["slice"] for row in with_flag["judge_agreement"]} == {
+            "full_set",
+            "held_out",
+        }
+
+    def test_it_is_refused_with_html_for_a_stated_reason(self, tmp_path: Path) -> None:
+        """Resolution 5(c)'s reasoning: the scorecard stands alone as the Art. 28 public
+        conclusions, and scorer agreement is paper evidence, not a compliance conclusion."""
+        runner = CliRunner()
+        log_dir = str(tmp_path / "cli_html_logs")
+        _build_cli_judge_log_dir(log_dir)
+        result = runner.invoke(cli_app, ["report", log_dir, "--html", "--judge-agreement"])
+        assert result.exit_code != 0
+        assert "Art. 28" in result.output
+
+    def test_json_and_html_stay_mutually_exclusive(self, tmp_path: Path) -> None:
+        runner = CliRunner()
+        log_dir = str(tmp_path / "cli_excl_logs")
+        _build_cli_judge_log_dir(log_dir)
+        result = runner.invoke(cli_app, ["report", log_dir, "--json", "--html"])
+        assert result.exit_code != 0
+        assert "mutually exclusive" in result.output
+
+    def test_the_flag_is_documented_as_slower_than_the_default(self) -> None:
+        runner = CliRunner()
+        help_text = runner.invoke(cli_app, ["report", "--help"]).output
+        assert "--judge-agreement" in help_text
+        assert "SLOWER" in help_text or "slower" in help_text
+
+
+def _build_cli_judge_log_dir(log_dir: str) -> None:
+    """A two-sample judged run: one held-out sample and one training sample."""
+    subject = get_model(
+        "mockllm/model",
+        custom_outputs=[ModelOutput.from_content("mockllm/model", "1.0") for _ in range(2)],
+    )
+    grader = get_model(
+        "mockllm/model",
+        custom_outputs=[
+            ModelOutput.from_content(
+                "mockllm/model",
+                "- criteria_used: ABSENT — nothing.\nSUBSTANTIVE COUNT: 0/1\nGRADE: I",
+            )
+            for _ in range(2)
+        ],
+    )
+
+    @task(
+        name="explanation_quality",
+        technical_requirement="Interpretability",
+        brazil_article="Art. 6, I",
+        brazil_scope="high_risk",
+    )
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset(
+                [
+                    Sample(input="q", target="n/a", metadata={"split": SPLIT_HELD_OUT}),
+                    Sample(input="q", target="n/a", metadata={"split": "train"}),
+                ]
+            ),
+            solver=[generate()],
+            scorer=[
+                _fraction_scorer(),
+                judge_scorer(
+                    instructions="stub",
+                    grader=JUDGE_GRADER,
+                    grader_temperature=JUDGE_GRADER_TEMPERATURE,
+                    grader_seed=JUDGE_GRADER_SEED,
+                ),
+            ],
+        )
+
+    logs = inspect_eval(
+        _t(),
+        model=subject,
+        model_roles={"grader": grader},
+        display="none",
+        log_dir=log_dir,
+    )
+    assert logs[0].status == "success", logs[0].error
