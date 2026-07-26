@@ -376,16 +376,28 @@ written for the case where the cues are wrong.
 ### The AIA benchmark and its sector overlay — `aia_checklist`
 
 `aia_checklist` was the reviewers' most-criticised figure: **one sample**, one prompt, scored
-0.983. It is now **4 samples** — four concrete finance deployments a compliance advisor is asked
-to advise on — and it carries a **sector dimension** that Phase 5 extends to health and capital
-markets (12 samples, 3 sectors × 4 deployer variants).
+0.983. It is now **12 samples** — 3 sectors × 4 concrete deployments a compliance advisor is asked
+to advise on — carrying a **sector dimension** across finance (BACEN/CMN), health (ANVISA / CFM /
+ANS) and capital markets (CVM).
 
 Each sample is scored on the **six cross-sector PL 2338 items** (who conducts / timing /
-documentation / public conclusions / RIPD / incident notification) **plus that sector's overlay
-items**. Per-sector scores reach `vigilai report` through Inspect's `grouped()` metric on each
-sample's `metadata["sector"]`, so the aggregator stays header-only; the flattened log keys are
-`mean_<sector>` and `stderr_<sector>`, and a test pins them against a real log rather than
+documentation / public conclusions / RIPD / incident notification) **plus the overlay items its own
+deployment can raise**. Per-sector scores reach `vigilai report` through Inspect's `grouped()`
+metric on each sample's `metadata["sector"]`, so the aggregator stays header-only; the flattened log
+keys are `mean_<sector>` and `stderr_<sector>`, and a test pins them against a real log rather than
 against a reading of Inspect's source.
+
+**The item set is per scenario, not per sector.** A Pix-fraud deployment cannot raise the Open
+Finance consent duty, and a health-plan authorisation engine is neither a medical device nor
+physician-mediated, so neither ANVISA nor CFM reaches it. Scoring every sample on its whole sector
+would count those as *misses* for reasons of relevance rather than knowledge, which is what put the
+attainable ceiling at ~0.61–0.78 before this was fixed. Each scenario therefore declares, per sector
+item, either a **verbatim span** of its own deployment text or a **frame licence** (an
+institution-wide duty the prompt reaches regardless of the deployment) — the same span-or-frame
+audit the rubric tasks use — and `metadata["expected_items"]` is exactly that set. The scored
+denominators run from **8** (`health_plan_prior_authorization`) to **15**
+(`health_diagnostic_imaging`). Both prompt conditions take the same denominator, so the
+guided↔unguided delta stays a property of the frame.
 
 ```bash
 uv run vigilai eval mockllm/model --tasks aia_checklist --limit 12          # all sectors
@@ -404,16 +416,21 @@ than a diagnostic:
 
 | `prompt_mode` | What the prompt gives the model | Prompt-echo floor |
 |---|---|---|
-| **`unguided`** (default, headline) | Role, the deployer scenario, and the **legal basis** — PL 2338/2023 Arts. 25-28 plus the sector's regime, named by its regulators — then "explain the applicable obligations completely". **No list of obligations.** | **0.0000** |
-| **`guided`** | The same, **plus every applicable item's description as a bullet**, in pt-BR and English. This is iteration 1's frame, kept verbatim. | **0.9444** |
+| **`unguided`** (default, headline) | Role, the deployer scenario, and the **legal basis** — PL 2338/2023 Arts. 25-28 plus the sector's regime, named by its regulators — then "explain the applicable obligations completely". **No list of obligations.** | **0.0000**, all 12 samples |
+| **`guided`** | The same, **plus every item in the sector's overlay as a bullet**, in pt-BR and English. This is iteration 1's frame, kept verbatim. | **0.9091–1.0000** |
 
 The **prompt-echo floor** is what the rendered prompt scores against its own scorer. Under the
-guided frame it is **17 of 18** finance items: a description cannot state its obligation without
-using the obligation's vocabulary, so a model that restates the list it was just handed is scored
-as almost fully compliant. That frame measures restatement, not knowledge, and it is the whole of
-iteration 1's 0.983. Under the unguided frame **nothing** in the prompt matches any cue of any
-item — not the role, not the deployment, not the PL 2338 citation, not the sector-regime phrase —
-so the floor is exactly zero and the score is the model's own knowledge.
+guided frame it is nearly everything: a description cannot state its obligation without using the
+obligation's vocabulary, so a model that restates the list it was just handed is scored as almost
+fully compliant. In **health and capital markets it is exactly 1.0000 on all eight samples** — the
+guided prompt is a complete answer key there, and a guided score of 1.0 in those sectors is the
+floor rather than a result. Only finance dips below, to 0.9091–0.9286, and only because of
+`human_review_gap_lgpd20`, whose cue set demands *human* review that even its own description does
+not use. That frame measures restatement, not knowledge, and it is the whole of iteration 1's 0.983.
+
+Under the unguided frame **nothing** in the prompt matches any cue of any item — not the role, not
+the deployment, not the PL 2338 citation, not the sector-regime phrase — so the floor is exactly
+zero in all three sectors and the score is the model's own knowledge.
 
 Both are reported because the **delta between them is the measurement**: how much of an
 `aia_checklist` score is knowledge of Brazilian AIA obligations and how much is restatement. It is
@@ -424,54 +441,85 @@ comparable to iteration 1.
 **Expect the unguided numbers to be much lower, and read a low score as a finding.** The paper's
 argument is that Brazil-specific obligations are not covered by models trained on EU/US material;
 an unguided score well below the guided one is evidence for that argument, not a defect in the
-benchmark. Two caveats travel with it. First, the mock backend answers identically every time, so
-its 0.000 in both conditions says nothing — the real signal comes from the scaled runs. Second,
-**every sample is scored on all 18 finance items regardless of which deployment it describes**, so
-items that only one of the four scenarios makes topical (the Pix MED return mechanism, Open
-Finance consent, fraud-indicator sharing, contesting a fraud block, AI-interaction disclosure) are
-counted as misses on the other three for reasons of *relevance* rather than knowledge. The guided
-frame hid that by naming every item in every prompt; the unguided frame exposes it. **A natural
-consultant-style answer to the unguided credit-scoring prompt scores 0.667**, so read an unguided
-score against a ceiling of roughly **0.61–0.78**, not against 1.0.
+benchmark. The mock backend answers identically every time, so its 0.000 in both conditions says
+nothing — the real signal comes from the scaled runs.
 
-One item is worth knowing about before reading any `aia_checklist` number: `human_review_gap_lgpd20`
-requires the answer to name **human** review, so a legally *correct* Brazilian answer — LGPD Art. 20
-grants review, and nothing in force requires the reviewer to be a person — scores zero on it. That
-is the item's purpose (it measures whether a deployer *voluntarily exceeds* a duty no instrument
-imposes, so its absence is a finding about Brazilian law), and it is why even the guided prompt
-scores 17/18 rather than 18/18. The full per-item elicitation audit is in the Phase 4 addendum of
+**The attainable ceiling, re-measured.** A well-informed consultant answer was drafted as a reply to
+one unguided prompt per sector and only then scored:
+
+| Sector | Scenario | Attainable | What a compliant answer still misses |
+|---|---|---|---|
+| Finance | `finance_credit_scoring` | **0.9231** (12/13) | `human_review_gap_lgpd20` ⭐ |
+| Health | `health_diagnostic_imaging` | **1.0000** (15/15) | nothing |
+| Capital markets | `capital_robo_advisor` | **0.8462** (11/13) | both capital ⭐ gap items |
+
+The same three answers score 0.6667, 0.8333 and 0.5500 against the old whole-sector denominator, so
+the per-scenario item set is worth roughly **0.16–0.30 of the scale** — the fix is not cosmetic.
+What is left below 1.0 is **exactly the gap items**, and that is by design: they measure whether a
+deployer *voluntarily exceeds* a duty no Brazilian instrument imposes, so a fully compliant answer
+does not reach them. Health reaches 1.0 because health has no gap item.
+
+The sharpest case is `human_review_gap_lgpd20`, and it is worth knowing before reading any
+`aia_checklist` number: it requires the answer to name **human** review, so a legally *correct*
+Brazilian answer — LGPD Art. 20 grants review, and nothing in force requires the reviewer to be a
+person — scores zero on it. **A more accurate answer scores lower.** That is the item working as
+designed, and it is why even the guided prompt tops out at 12/13 in finance. The full per-item
+elicitation audit is in the Phase 4 and Phase 5 entries of
 [`docs/task-artifacts/iteration-2-implementation-log.md`](docs/task-artifacts/iteration-2-implementation-log.md).
 
 **Send the two runs to different `--log-dir`s.** `vigilai report` keys task scores by task name and
 a later log for the same task silently overwrites an earlier one, so two conditions in one
 directory would report a single, unlabelled `aia_checklist` row.
 
-**The overlays are *de facto* analogues, never AI-specific rules.** No Brazilian sector regulator
-has issued a binding AI rule: BACEN has said publicly it will not act before PL 2338 is enacted,
-and PL 2338 does not name BACEN. What the finance overlay scores is the lattice of adjacent,
-binding obligations that stand in for PL 2338's rights — the mandatory *ouvidoria* (Res. CMN
-4.860/2020), the Cadastro Positivo disclosure and *impugnação* rights (Lei 12.414/2011 Art. 5,
-IV and III), credit-model governance (Res. BCB 303/2023), Pix MED contestation (Res. BCB
-103/2021 → 493/2025), cloud-vendor accountability (Res. CMN 4.893/2021), the integrated
-risk-management framework (Res. CMN 4.557/2017), Open Finance consent (Res. Conjunta 1/2020 +
-Res. BCB 32/2020), and fraud-indicator sharing (Res. Conjunta 6/2023). **None of it is legal
-advice.**
+**The overlays are *de facto* analogues, never AI-specific rules. Not one of the 38 sector items is
+an AI-specific rule that is both binding and in force today.**
 
-**Three items are gap-flagging (⭐), and they are the interesting ones.** They test whether a
+| Sector | Regulators | Items | What the overlay actually is |
+|---|---|---|---|
+| `finance_bacen` | BACEN / CMN | 12 (3 ⭐) | Adjacent binding rules: the mandatory *ouvidoria* (Res. CMN 4.860/2020), Cadastro Positivo disclosure and *impugnação* (Lei 12.414/2011 Art. 5, IV and III), credit-model governance (Res. BCB 303/2023), Pix MED contestation (Res. BCB 103/2021 → 493/2025), cloud-vendor accountability (Res. CMN 4.893/2021), the integrated risk framework (Res. CMN 4.557/2017), Open Finance consent, fraud-indicator sharing. BACEN has said publicly it will not act before PL 2338 is enacted, and **PL 2338 does not name BACEN**. |
+| `health_anvisa` | ANVISA / CFM / ANS | 12 (0 ⭐) | Medical-device law, not AI law — RDC 657/2022's full text contains **no** "inteligência artificial" and no "aprendizado de máquina". The one instrument that does regulate medical AI is **CFM Res. 2.454/2026**, and it is a *physicians' council* resolution: adopted 11 Feb 2026, **in force 26 Aug 2026**, enforced by the Conselho Regional de Medicina against *médicos*, never mentioning ANVISA. Its five items ship as `not_yet_in_force`. ANVISA's Guia 38/2020 is expressly **non-binding**. |
+| `capital_cvm` | CVM | 14 (2 ⭐) | No CVM instrument uses "inteligência artificial" in an operative clause. The strongest hook is Res. CVM 21 Art. 19 — source code open to **CVM inspection**, and automation not mitigating the manager's liability. The most directly AI-specific document in the sector is an ANBIMA **Guia Orientativo** with no adherence or enforcement mechanism at all. |
+
+**Three explicit gaps, stated rather than papered over.**
+
+- **CVM has no Arts. 25-28 analogue at all** — the clearest gap in the mapping. Res. CVM 21 gives
+  *the regulator* source-code inspection, not the public an impact report; Res. CVM 175 requires a
+  risk policy and **never mentions models** (zero hits for "inteligência", "algoritmo" and
+  "automatizado" across its 399 consolidated pages); Res. CVM 80 Item 4 requires risk-factor
+  disclosure with no AI or model category.
+- **Art. 5, III does not map to capital markets, and no item pretends it does.** Res. CVM 30
+  Art. 3, I–III *requires* intermediaries to differentiate by objectives, financial situation and
+  knowledge of risk — differential treatment by profile is the statutory purpose of suitability, so
+  an anti-discrimination item scored against it would penalise compliant behaviour as bias. A test
+  refuses any capital item citing Art. 5, III.
+- **The wellness-app hole.** RDC 657/2022 Art. 1 §2, I excludes *"software para bem-estar"*, and
+  CFM Res. 2.454/2026 binds only *médicos* — so an AI consumer-health app that is neither a
+  registered SaMD nor physician-mediated falls outside **both** health regimes, with only generic
+  LGPD and (if enacted) PL 2338 duties. It is not shipped as an item, because a gap item measures
+  a missing duty and here the whole regime is absent.
+
+**Five items are gap-flagging (⭐), and they are the interesting ones.** They test whether a
 deployer *voluntarily exceeds* a duty that **no** Brazilian instrument imposes, so a low score
 there is a finding about Brazilian law, not about the model:
 
-| Item | PL 2338 | Nearest instrument, and what it stops short of |
-|---|---|---|
-| `human_review_gap_lgpd20` ⭐ | Art. 6, III | **LGPD Art. 20**, in force, requires that *a* review be available plus §1 criteria disclosure and §2 ANPD audit — and is **silent on who or what performs it**. *"por pessoa natural"* was struck from the caput; the §3 introduced by the 2019 conversion bill was vetoed (Mensagem 288/2019, veto upheld 2 Oct 2019). A second automated pass is lawful **by omission**. |
-| `pix_fraud_blocking_no_analogue` ⭐ | Art. 6, I/II | **Res. BCB 501/2025** requires notifying the account holder, but delegates *"fundada suspeita"* to each institution's internal criteria and creates **no appeal**. The gap is **contestation only** — notice is not a gap. |
-| `ai_interaction_disclosure_gap` ⭐ | Art. 5, I | **CDC Art. 6, III** is a generic right to clear information about the *product or service*, not about the **automated nature of the channel**. A genuine, uncontradicted gap: PL 2338 Art. 5, I would be new law in Brazilian banking. |
+| Item | Sector | PL 2338 | Nearest instrument, and what it stops short of |
+|---|---|---|---|
+| `human_review_gap_lgpd20` ⭐ | finance | Art. 6, III | **LGPD Art. 20**, in force, requires that *a* review be available plus §1 criteria disclosure and §2 ANPD audit — and is **silent on who or what performs it**. *"por pessoa natural"* was struck from the caput; the §3 introduced by the 2019 conversion bill was vetoed (Mensagem 288/2019, veto upheld 2 Oct 2019). A second automated pass is lawful **by omission**. |
+| `pix_fraud_blocking_no_analogue` ⭐ | finance | Art. 6, I/II | **Res. BCB 501/2025** requires notifying the account holder, but delegates *"fundada suspeita"* to each institution's internal criteria and creates **no appeal**. The gap is **contestation only** — notice is not a gap. |
+| `ai_interaction_disclosure_gap` ⭐ | finance | Art. 5, I | **CDC Art. 6, III** is a generic right to clear information about the *product or service*, not about the **automated nature of the channel**. A genuine, uncontradicted gap: PL 2338 Art. 5, I would be new law in Brazilian banking. |
+| `algo_impact_public_disclosure_gap_cvm` ⭐ | capital | Arts. 25-28 | **Res. CVM 21 Art. 19 sole ¶** opens the source code to *CVM inspection at the firm's premises*, not to publication; **Res. CVM 175** requires a risk policy that never mentions models; **Res. CVM 80 Item 4** has no AI or model-risk category. Nothing requires publishing anything AIA-shaped. |
+| `ai_recommendation_disclosure_gap_cvm` ⭐ | capital | Art. 5, I | **Res. CVM 21 Art. 19** is regulator-facing; **Res. CVM 178/179 and Res. CVM 20** disclose *who pays whom* and the analyst's conflicts. Nothing requires telling an investor that a recommendation or an allocation was produced by a machine. |
+
+**The same right, three different answers.** PL 2338 Art. 5, I — the paper's headline — is a **gap**
+in banking, an **adopted but not-yet-effective** duty in health (CFM Art. 5 §1, from 26 Aug 2026),
+and a **gap** in capital markets. A test pins the three-way split so a later edit cannot flatten it.
 
 Every item records its instrument, a primary-source URL and a **sourcing tier** (primary /
-corroborated-secondary / open); the full record, with operative quotes and the corrections this
-pass made to the underlying research, is
+corroborated-secondary / open), plus its **regulatory character** (binding / gap / non-binding /
+self-regulatory / not-yet-in-force); the full record, with operative quotes and the corrections
+these passes made to the underlying research, is
 [`docs/sector-overlay-legal-verification.md`](docs/sector-overlay-legal-verification.md). A test
-refuses to let the code and that record drift apart.
+refuses to let the code and that record drift apart. **None of it is legal advice.**
 
 **Two scorer findings, both worse than expected, and both now fixed or measured.**
 
@@ -661,6 +709,14 @@ sector score reads as a regulatory finding rather than only a model failure. The
 **omitted entirely** when no task reported a sector — never rendered blank. `--json` gains a
 `sector_overlay` array. The gap-item list travels on the task **decorator**
 (`brazil_gap_items`), not in `Score.metadata`, so the aggregator never has to load a sample.
+
+**One consequence of that, worth knowing when reading `--json`.** Because the decorator carries a
+single flat list for the whole task, each entry of the `sector_overlay` array repeats **all five**
+gap-item ids rather than only that sector's — so `health_anvisa`, which has none, still lists five.
+The Markdown and HTML views are unaffected: they print one aggregated *"Gap-flagging items in this
+run"* line for the whole section, which is accurate. Making the JSON per-sector would need a
+per-sector gap list in the log header, i.e. a report change; Phase 5 was append-only by
+construction, so it is recorded rather than fixed.
 
 Per-sector error bars follow the same n<2 discipline as the headline: because the log header
 records the task's total sample count but **not** each group's, a sector's `± se` is dropped

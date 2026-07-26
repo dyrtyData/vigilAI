@@ -191,6 +191,23 @@ suspenso = "suspenso"
 tema = "tema"
 termo = "termo"
 vai = "vai"
+# Phase 5 (health / capital-markets overlays): more pt-BR words mapped to
+# themselves, same policy as above — narrower than excluding files or widening
+# `extend-ignore-identifiers-re`, and it keeps genuine English typos detectable.
+Constituem = "Constituem"
+algoritmos = "algoritmos"
+aprove = "aprove"
+clinicas = "clinicas"
+clinicos = "clinicos"
+componentes = "componentes"
+essencial = "essencial"
+ilegal = "ilegal"
+intelectual = "intelectual"
+relevante = "relevante"
+respondendo = "respondendo"
+rever = "rever"
+softwares = "softwares"
+Magnetis = "Magnetis"   # a Brazilian robo-advisor named in doc 12
 # Not Portuguese, but correct as written in the committed research notes:
 # FPR = False Positive Rate; BA = the IBGE code for the state of Bahia.
 BA = "BA"

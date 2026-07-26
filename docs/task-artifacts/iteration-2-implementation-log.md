@@ -3051,3 +3051,366 @@ sections, same gap-item marking (mock numbers, not findings):
   See the fairness audit above. If per-scenario expected-item sets are adopted, they are a data
   change (`metadata["expected_items"]`), and both conditions must adopt them together or the
   guided↔unguided delta stops being a like-for-like comparison.
+
+---
+
+## Phase 5 — Health (ANVISA/CFM) + capital-markets (CVM) overlays · [either] · 2026-07-25
+
+**Status:** automated verification complete. Both of this phase's manual-verification items were
+converted into tests (`TestRegulatoryCharacterLabels`), per the standing instruction. The phase
+title is left unticked in the outline pending the human's sign-off.
+**Commit(s):** _pending — working tree, not yet committed_
+
+`aia_checklist` goes **4 → 12 samples**, three sectors × four deployer variants. The checklist gains
+**12 health** items (ANVISA / CFM / ANS) and **14 capital-markets** items (CVM), and
+**Resolution 10** lands: every scenario now carries a genuine per-scenario `expected_items`, the
+four finance ones retrofitted to match.
+
+### The phase's success criterion was a diff shape, and it held
+
+```
+ README.md                                        |  158 ++-
+ docs/sector-overlay-legal-verification.md        |  769 ++++++++++++++-
+ pyproject.toml                                   |   17 +
+ src/vigilai/tasks/aia_checklist/aia_checklist.py |   30 +-
+ src/vigilai/tasks/aia_checklist/checklist.py     | 1136 +++++++++++++++++++++-
+ src/vigilai/tasks/aia_checklist/scenario.py      |  383 +++++++-
+ tests/test_aia_checklist.py                      |  526 ++++++++--
+ 7 files changed, 2882 insertions(+), 137 deletions(-)
+```
+
+**Nothing in `src/vigilai/report/`. No scorer signature change. No report parser change.** The
+Phase 4 extensibility claim is confirmed by measurement: `checklist.py` has **1131 insertions and
+5 deletions**, and the five deleted lines are the two empty `SECTOR_ITEMS` placeholders and the
+comment above them. `brazil_report._sector_metrics` parses `mean_<x>` / `stderr_<x>` **by shape**,
+so the two new sectors appeared in the report with no code touching them at all.
+
+**`aia_checklist.py` did move, by 24 insertions and 6 deletions, and both moves were forced.** The
+outline's own Phase 5 checkbox names the file for this reason.
+
+1. **The `brazil_gap_items` decorator attrib is a literal** by the Phase 4 cross-phase correction
+   (`list_tasks` `ast.literal_eval`s each keyword and silently drops what it cannot evaluate), so
+   two new gap items had to be written into the string. Not writable as data.
+2. **Resolution 10 needed two item sets where there was one.** `rendered = items_for_sector(...)`
+   stays the guided frame's topic list; `scored = items_for_scenario(...)` is the new denominator.
+   Splitting them is what keeps the four finance guided prompts byte-identical to the Phase 4
+   `.eval` log — narrowing the *topic list* would have changed all four pinned digests.
+
+### Commands run
+
+```bash
+uv run pytest tests/test_aia_checklist.py
+uv run pytest
+uv run make default-config && git diff config/default_config.yaml   # empty
+uv run mypy src/vigilai/tasks/aia_checklist/ src/vigilai/report/brazil_report.py
+uv run mypy src/vigilai/
+uvx typos
+
+# mock end-to-end, $0, no API key
+uv run vigilai eval mockllm/model --tasks aia_checklist --limit 12 --log-dir /tmp/vigilai-p5-unguided
+uv run vigilai eval mockllm/model --tasks aia_checklist \
+  --task-arg aia_checklist:prompt_mode=guided --limit 12 --log-dir /tmp/vigilai-p5-guided
+for S in finance_bacen health_anvisa capital_cvm; do
+  uv run vigilai eval mockllm/model --tasks aia_checklist \
+    --task-arg "aia_checklist:sector=$S" --limit 12 --log-dir "/tmp/vigilai-p5-$S"
+done
+uv run vigilai eval mockllm/model --tasks aia_checklist \
+  --task-arg aia_checklist:split=held_out --limit 12 --log-dir /tmp/vigilai-p5-heldout
+uv run vigilai eval mockllm/model --tasks aia_checklist \
+  --task-config config/default_config.yaml --limit 12 --log-dir /tmp/vigilai-p5-cfg
+uv run vigilai report <run> ; uv run vigilai report <run> --json ; uv run vigilai report <run> --html
+```
+
+### Run config
+
+| Model id | `--limit` | `--epochs` | `--temperature` | `--seed` | Other `--task-arg`s | Log dir | Samples | Approx. cost |
+|---|---|---|---|---|---|---|---|---|
+| `mockllm/model` | 12 | default (1) | unset | unset | none (→ `unguided`) | `/tmp/vigilai-p5-unguided/…T21-49-37-04-00` | **12** | **$0** |
+| `mockllm/model` | 12 | default (1) | unset | unset | `prompt_mode=guided` | `/tmp/vigilai-p5-guided/…T21-49-52-04-00` | **12** | **$0** |
+| `mockllm/model` | 12 | default (1) | unset | unset | `sector=finance_bacen` | `/tmp/vigilai-p5-finance_bacen/…T21-50-03-04-00` | **4** | **$0** |
+| `mockllm/model` | 12 | default (1) | unset | unset | `sector=health_anvisa` | `/tmp/vigilai-p5-health_anvisa/…T21-50-10-04-00` | **4** | **$0** |
+| `mockllm/model` | 12 | default (1) | unset | unset | `sector=capital_cvm` | `/tmp/vigilai-p5-capital_cvm/…T21-50-20-04-00` | **4** | **$0** |
+| `mockllm/model` | 12 | default (1) | unset | unset | `split=held_out` | `/tmp/vigilai-p5-heldout/…T21-50-28-04-00` | **3** | **$0** |
+| `mockllm/model` | 12 | default (1) | unset | unset | `--task-config config/default_config.yaml` | `/tmp/vigilai-p5-cfg/…T21-50-36-04-00` | **12** | **$0** |
+
+All log dirs under `/tmp` deliberately: plumbing checks, not findings.
+
+### Verbatim `vigilai report` output — the sector overlay, all three sectors
+
+Mock numbers. **Fixture output, not findings — never cite these.** What the run verifies is that
+three sectors render with a per-sector `±` and that the counts are right.
+
+```markdown
+## Sector overlay (BACEN / ANVISA / CVM)
+
+No Brazilian sector regulator has issued a binding AI-specific rule. […]
+
+| Sector | Task | Sector score ± se |
+|---|---|---|
+| `capital_cvm` | `aia_checklist` | 0.000 ± 0.000 |
+| `finance_bacen` | `aia_checklist` | 0.000 ± 0.000 |
+| `health_anvisa` | `aia_checklist` | 0.000 ± 0.000 |
+
+**Gap-flagging items in this run:** `ai_interaction_disclosure_gap`,
+`ai_recommendation_disclosure_gap_cvm`, `algo_impact_public_disclosure_gap_cvm`,
+`human_review_gap_lgpd20`, `pix_fraud_blocking_no_analogue`.
+```
+
+HTML: the same three rows, seven `class="se"` spans, one `<code class='task'>` per sector.
+
+**The `split=held_out` run suppresses every sector `± se` to `null`** — 3 samples across 3 sectors
+is below `2 × n_sectors`, exactly the discipline Phase 4 documented. Working as intended, and this
+is the run Phase 6's judge grades.
+
+**One JSON imprecision, recorded not fixed.** `sector_overlay[].gap_items` repeats **all five** gap
+ids in every sector entry, so `health_anvisa` — which has none — still lists five. The gap list
+travels on the task **decorator** as one flat string, so the header-only aggregator has no
+per-sector view of it. Markdown and HTML are unaffected (they print one aggregated line for the
+section, which is accurate). Fixing it needs a per-sector gap list in the log header, i.e. a report
+change, which this phase's success criterion forbids. Recorded in the README.
+
+### Resolution 10 — the per-scenario denominator, and the re-measured ceiling
+
+Each scenario declares, per sector item it is scored on, either a **verbatim span** of its own
+deployment prose or a **frame licence** — the Phase 3 span-or-frame licence audit, applied here.
+`expected_items` = the six cross-sector items + exactly those. Denominators:
+
+| Scenario | Scored | Sector set | Scenario | Scored | Sector set |
+|---|---|---|---|---|---|
+| `finance_credit_scoring` | 13 | 18 | `health_plan_prior_authorization` | **8** | 18 |
+| `finance_pix_fraud_blocking` | 13 | 18 | `health_telemedicine_intake` | 14 | 18 |
+| `finance_service_assistant` | 11 | 18 | `capital_robo_advisor` | 13 | 20 |
+| `finance_open_finance_offers` | 14 | 18 | `capital_advisor_recommendation_engine` | 13 | 20 |
+| `health_diagnostic_imaging` | **15** | 18 | `capital_broker_execution_model` | 10 | 20 |
+| `health_adaptive_monitoring` | 14 | 18 | `capital_fund_vendor_model` | 14 | 20 |
+
+**The frame-licensed sets, and the parity rule that forced them.**
+
+| Sector | Frame-licensed | Why |
+|---|---|---|
+| finance | `ouvidoria_channel`, `cybersecurity_cloud_vendor_accountability`, `integrated_risk_management_framework` | duties of the **institution**, which the prompt's *"quais obrigações essa organização precisa cumprir"* reaches regardless of the deployment |
+| capital | `intermediary_infosec_cyber_policy` | the infosec/cyber duty attaches to any CVM-regulated entity, intermediary or portfolio manager alike |
+| health | **none** | and this is a finding, not an omission — see below |
+
+**Health's empty frame set is the sharpest structural result of the phase.** The parity rule
+requires the frame-licensed set to be identical across a sector's scenarios, so it is the
+intersection of what all four raise. In health that intersection is **empty**, because the overlay
+splits into three disjoint regimes — ANVISA device duties, CFM physician duties, ANS plan duties —
+and no deployment sits in all three. `health_plan_prior_authorization` shares **no sector item at
+all** with the three clinical scenarios: a prior-authorisation engine at a health-plan operator is
+not a medical device (no ANVISA duty) and is not physician-mediated (CFM binds *médicos*), so its
+whole overlay is the two ANS items. Its denominator is **8** against `health_diagnostic_imaging`'s
+**15** — the same automated adverse decision, twice as regulated in a hospital as in an insurer.
+
+**The re-measured attainable ceiling.** A well-informed consultant answer was drafted as a reply to
+one unguided prompt per sector and only then scored (the Phase 4 convention: one draft by one
+author, deliberately **not** committed as a test).
+
+| Sector | Scenario | Ceiling now | Same answer, Phase 4 denominator | What a compliant answer still misses |
+|---|---|---|---|---|
+| Finance | `finance_credit_scoring` | **0.9231** (12/13) | 0.6667 (12/18) | `human_review_gap_lgpd20` ⭐ |
+| Health | `health_diagnostic_imaging` | **1.0000** (15/15) | 0.8333 (15/18) | — |
+| Capital | `capital_robo_advisor` | **0.8462** (11/13) | 0.5500 (11/20) | `algo_impact_public_disclosure_gap_cvm` ⭐, `ai_recommendation_disclosure_gap_cvm` ⭐ |
+
+The finance figure is directly comparable to Phase 4's: that phase's own probe scored **12/18** on
+this prompt, and so does this one, missing the same six items. Per-scenario `expected_items` is
+therefore worth **0.16–0.30 of the scale**, which is not cosmetic.
+
+**Is the ceiling still materially below 1.0? Yes in two sectors, and the reason is now completely
+explained: the residual is exactly the gap items.** That is what they are for — they measure
+whether a deployer *voluntarily exceeds* a duty no Brazilian instrument imposes, so a fully
+compliant answer does not reach them. Health reaches 1.0 precisely because health has no gap item.
+The honest instruction for the paper is therefore no longer "read against ~0.61–0.78 for unclear
+reasons" but: **read against 1.0 minus that scenario's gap items**, and read a missed gap item as a
+finding about Brazilian law rather than about the model. The sharpest instance is unchanged and
+still needs its sentence in the paper: `human_review_gap_lgpd20` scores zero for the legally
+*correct* answer that LGPD Art. 20 grants review without requiring a person.
+
+### Both prompt modes, and the echo floors for the new sectors
+
+`SECTOR_REGIME_PT`'s health and capital phrases, pre-written in Phase 4, **rendered on arrival** —
+no edit was needed — and each still credits **zero** items when scored alone against every item
+that exists.
+
+| Condition | Floor | Detail |
+|---|---|---|
+| **`unguided`** | **0.0000** on all **12** samples | Nothing in the role, the deployment, the PL 2338 citation or either new regime phrase matches any cue of any item, in any sector. Confirmed four ways, as in Phase 4: each `deployment` alone, each `SECTOR_REGIME_PT` phrase alone, and each whole rendered prompt, all scored against **all 38+6 items** rather than only their own sector's. |
+| **`guided`** | **0.9091 – 1.0000** | Per scenario: finance 12/13, 12/13, 10/11, 13/14; **health 15/15, 14/14, 8/8, 14/14; capital 13/13, 13/13, 10/10, 14/14.** |
+
+**The guided frame is a complete answer key in the two new sectors — 1.0000 on all eight samples.**
+Only finance dips below, and only because `human_review_gap_lgpd20`'s cue set demands *human*
+review that even its own description does not use. Phase 4's 0.9444 was one item short of a
+tautology; with the Resolution 10 denominator the guided condition in health and capital markets
+has **no headroom at all**. Two consequences for Phases 8-11: a guided score of 1.0 in health or
+capital markets is the **floor**, not a result, and the guided↔unguided delta in those sectors is
+simply the unguided score subtracted from 1.
+
+**Getting the unguided floor to stay at zero constrained the authoring, and it is worth recording
+what had to be avoided** — the leakage guard scores every deployment against *every* item across
+all three sectors: *prévia* (satisfies `timing` next to *operação* — the trap Phase 4 hit),
+*operador* and *fornecedor* (`who_conducts`), *ouvidoria*, *supervisão humana*, *revisão*, *classe
+de risco*. Two cue sets also had to be tightened to **three-way ANDs** during authoring, because a
+two-cue version would have been near-free: `health_aia_public_conclusions_disclosure` and
+`algo_impact_public_disclosure_gap_cvm` both name the *avaliação de impacto*, which the prompt
+itself names in every sector, so each now additionally requires the documentation/update aspect (or
+a publication verb) **and** an audience.
+
+### The verification gate, and what shipped
+
+The gate was cleared before implementation and its results were binding. Recorded in full in
+`docs/sector-overlay-legal-verification.md`, which now carries health and capital-markets rows in
+the same format (instrument / status / URL / operative quote / sourcing tier) and **thirteen more
+corrections to doc 12** (numbers 8-20).
+
+**Read verbatim from primary sources in this pass** (not merely relied on):
+
+- **CFM Res. 2.454/2026 in full** — downloaded from `sistemas.cfm.org.br` (607 KB PDF, 41 KB of
+  text) and searched. Confirms: adopted **11 Feb 2026** (5ª Sessão Plenária Extraordinária);
+  DOU 27/02/2026 Ed. 39 p. 158, retificação 05/03/2026 Ed. 43 p. 91; **Art. 23** → in force
+  **26 Aug 2026**; **Art. 15** enforcement by the **Conselho Regional de Medicina**; **Art. 8**
+  *"sanções éticas cabíveis"* on the *médico*; and **zero occurrences of "ANVISA"**. Art. 4-I,
+  Art. 5 §1, Art. 10-II, Art. 14 par. único, **Art. 19 §1**, Anexo I-XIII, Anexo I-XX and
+  Anexo III-II all quoted verbatim in the record.
+- **RDC 657/2022 in full** from its DOU permalink. Confirms **no** "inteligência artificial" and
+  **no** "aprendizado de máquina" anywhere, and Art. 1 §2, I excluding *"software para bem-estar"*
+  verbatim — the wellness gap, from the primary text.
+- **The DOU rectification of ANS RN 623/2024** (23 Dec 2024, Ed. 246, p. 357), which states the
+  resolution's date and its original publication at DOU nº 244, 19 Dec 2024, pp. 285-287.
+
+**Every source URL was HTTP-checked in this pass** and every one returns 200. Three could not be
+obtained and the record says so rather than substituting quietly: **RDC 67/2009** (predates the
+current DOU portal — the item points at RDC 657/2022 Art. 24, which carries the SaMD half of the
+same duty), **RDC 340/2020** (the item points at its same-day companion **IN 61/2020**, which
+enumerates the three change tiers), and **ANVISA Guia 38/2020** (a guide, not a norm, and not in
+the DOU — the item points at ANVISA's publications index).
+
+**Dropped, as instructed:** doc 12's ANVISA **draft revision of RDC 657**. No consulta pública
+exists; the process is pre-consultation. A test sweeps `checklist.py` for both category names it
+would have created.
+
+**Corrected, as instructed:** CNS Res. 738 is **01 Feb 2024** (the 7 Nov 2024 stamp is an aggregator
+error — the same date sits on a different resolution, a batch-scrape tell; the separately sourced
+21 Jan 2025 first publication and its republication for *"incorreções no original"* are kept);
+Res. CVM 43 is **17 Aug 2021**; Res. CVM 21 is **25 Feb 2021** with the "25/26" hedge dropped; and
+ANBIMA's AI-procurement document is a **Guia Orientativo** — advisory, **no adherence and no
+enforcement mechanism at all**, weaker than ANBIMA's binding Códigos. A test asserts the last one,
+because "self-regulatory" alone overstates it by a whole category.
+
+**Two negative claims shipped as designed rather than as stretches:** the CVM Arts. 25-28 gap (a
+gap item naming three nearest instruments, each falling short in a different direction) and the
+**absence** of any Art. 5, III capital-markets item, enforced by a test that refuses one — Res. CVM
+30 Art. 3, I-III *requires* differentiation by profile, so an anti-discrimination item scored
+against it would mark a firm down for complying.
+
+### New vocabulary, and why
+
+`ITEM_NOT_YET_IN_FORCE` was added to `ITEM_STATUSES`. CFM Res. 2.454/2026 is neither binding
+(nothing is enforceable before 26 Aug 2026) nor a gap (the duty exists with a fixed commencement
+date), and collapsing it into either would misstate Brazilian law in opposite directions. Making it
+**data** is what turned the outline's first manual check into `TestRegulatoryCharacterLabels`.
+
+Census across all three sectors: **26 `binding`, 5 `not_yet_in_force`, 5 `gap`, 1 `non_binding`,
+1 `self_regulatory`.** One line: **not one of the 38 sector items is an AI-specific rule that is
+both binding and in force today** — the nearest thing is a physicians' council resolution starting
+on 26 August 2026, and the most AI-specific document in capital markets is a trade-association
+advisory guide.
+
+### Automated verification
+
+- [x] `uv run pytest tests/test_aia_checklist.py` → **133 passed** (was 110). New:
+      `TestPerScenarioExpectedItems` (10), `TestRegulatoryCharacterLabels` (8), plus new checks in
+      `TestSectorVocabulary`, `TestLegalVerificationGate` and `TestPromptEchoFloor`.
+- [x] `git diff --stat` touches **only** `checklist.py`, `scenario.py`, `aia_checklist.py`, tests
+      and docs (plus `pyproject.toml` for the typos allowlist). **No** change in
+      `src/vigilai/report/`, no scorer signature change, no report parser change.
+- [x] `uv run vigilai eval mockllm/model --tasks aia_checklist --limit 12` → 12 samples;
+      `uv run vigilai report … --html` renders **all three sectors** in the overlay with a
+      per-sector `±`. Per-sector runs give 4 each; `split=held_out` gives 3.
+- [x] `uv run pytest` (full suite) → **586 passed** (was 563), no regressions.
+- [x] `uv run make default-config` → **no diff.** No task signature changed this phase.
+- [x] No `[UNVERIFIED]` marker in any committed checklist comment.
+- [x] `uv run mypy src/vigilai/tasks/aia_checklist/ src/vigilai/report/brazil_report.py` →
+      `Success: no issues found in 5 source files`. Whole-tree is the same **22 pre-existing errors
+      in 14 vendored upstream files**, none in this phase's files.
+- [x] `uvx typos` → **9 errors, unchanged**, all the pre-existing English typos in vendored
+      `src/vigilai/tasks/cab/*.json`. Fourteen new entries in
+      `[tool.typos.default.extend-words]` (`Constituem`, `algoritmos`, `aprove`, `clinicas`,
+      `clinicos`, `componentes`, `essencial`, `ilegal`, `intelectual`, `relevante`, `respondendo`,
+      `rever`, `softwares`, and `Magnetis` — a Brazilian robo-advisor named in doc 12); nothing
+      silenced.
+- [x] *(added)* `--task-config config/default_config.yaml` driven through the real CLI: 12 samples,
+      `prompt_mode` resolving to the string `unguided` (the literal-default trap, re-checked).
+
+### What was automated that the outline left to a human
+
+**Outline manual check 1 — "confirm the CFM-sourced items are labelled not-yet-effective and scoped
+to physicians rather than products, and that `cybersecurity_lifecycle_management` and
+`ai_vendor_procurement_diligence_selfreg` are labelled non-binding / self-regulatory."** Mechanical
+once the regulatory character is data. `TestRegulatoryCharacterLabels` asserts: every CFM item
+carries `ITEM_NOT_YET_IN_FORCE`, names both "adopted 11 Feb 2026" and "26 Aug 2026", says "binds
+physicians … not products", and **never mentions ANVISA**; only CFM items carry that status; the
+Guia 38 item carries `ITEM_NON_BINDING` with its own *"caráter recomendatório e não vinculante"*
+quote and reads "expected practice" in its article field; and the ANBIMA item carries
+`ITEM_SELF_REGULATORY`, "Guia Orientativo", "no adherence or enforcement mechanism" and "advisory
+only".
+
+**Outline manual check 2 — "confirm no item asserts a CVM Arts. 25-28 duty or an Art. 5, III
+capital-markets duty."** Two tests. Any capital item touching Arts. 25-28 must hedge in its article
+field (GAP / weak / soft / self-regulatory / de facto analogue), and the only capital gap item filed
+there is `algo_impact_public_disclosure_gap_cvm`. No capital item may cite Art. 5, III except to
+disclaim it, and the only Art. 5, III item in the whole three-sector overlay is health's
+`algorithmic_bias_monitoring_health`.
+
+**Beyond the outline, and worth more than either:** `TestPerScenarioExpectedItems` makes
+Resolution 10 checkable rather than asserted — every licence span must occur verbatim in its own
+deployment, every raised id must belong to that scenario's sector, the frame-licensed set must be
+identical across a sector, **every sector item must be raised by at least one scenario** (no dead
+weight in the checklist), the cross-sector six are in every sample and never listed, both prompt
+conditions take the same denominator, the guided topic list stays the whole sector overlay, and the
+per-sample denominator is read back **out of a real `.eval` log** rather than off the dataset.
+
+### Deviations from the structure outline
+
+1. **`aia_checklist.py` changed** (24 insertions / 6 deletions). Forced twice over — see the diff
+   section above. The outline's own Phase 5 validation checkbox names the file, so this is a
+   deviation only from the stricter "data modules only" reading.
+2. **14 capital-markets items, not the 12 the outline's file-changes paragraph lists.** The two
+   extra are the gap items. The outline names the Arts. 25-28 gap as something to "represent as an
+   absent/gap item"; the Art. 5, I capital gap is doc 12's own confirmed finding and is added
+   because it completes the three-sector picture of the paper's headline right.
+3. **No health gap item.** The outline's health list has none, and the wellness-app hole is stated
+   in the README and the verification record rather than shipped as an item — a gap item measures a
+   missing *duty*, and here the whole regime is absent. Recorded so a later pass does not "fix" it.
+4. **`ITEM_NOT_YET_IN_FORCE` added to the status vocabulary** — not in the outline. Justified as
+   Phase 4 justified `status` / `instrument` / `source_url` / `sourcing`: it is what turns a manual
+   check into a test.
+5. **`AIADeployerScenario` gained `raises`** (pairs of `(item_id, licence)`) rather than a bare
+   `expected_items` list. Same cost, and it carries the *reason* alongside the id, which is what
+   makes the elicitation test possible at all.
+6. **The guided topic list was deliberately not narrowed.** Resolution 10 narrows the denominator;
+   the frozen frame keeps rendering the whole sector overlay, so the four Phase 4 prompt digests
+   still hold. Extra bullets cannot inflate a score, because items outside `expected_items` are not
+   in the denominator.
+7. **Two ANS items ship at `corroborated_secondary`.** The cleared verification gate covered the
+   ANVISA, CFM and CVM instruments but **not** ANS RN 623/2024. doc 12 records it as binding with
+   no unverified flag and `explanation_quality`'s `health_coverage` domain already rests on the
+   same reading, so they ship — at the tier that says what the sourcing is. Same for Res. CVM
+   178/179 and Res. CVM 20, which the gate also did not reach.
+
+### Notes / gotchas for the next session
+
+- **Phase 6 inherits five gap items, not three**, and the `brazil_gap_items` decorator literal must
+  be kept in step with `GAP_ITEM_IDS` by hand — a test pins it, but only after the fact.
+- **A guided `aia_checklist` score of 1.0 in health or capital markets means nothing.** It is the
+  measured floor. Phases 8-11 must not report it as compliance.
+- **`test_a_sector_without_scenarios_raises_rather_than_yielding_nothing` now monkeypatches**
+  `scenario.AIA_SCENARIOS`, because every sector has scenarios and the guard is unreachable from
+  the shipped data. It is kept rather than deleted because the failure it prevents is silent.
+- **New cues need probing against the *unguided prompt*, not only against common words.** The frame
+  itself contains *avaliação de impacto algorítmico*, *IA*, *consultor*, *organização*; the health
+  regime phrase contains *ANVISA*, *ANS*, *Conselho Federal de Medicina*, *saúde*, *produtos*,
+  *serviços*; the capital one contains *mercado de capitais*, *Comissão de Valores Mobiliários*,
+  *intermediários*, *gestores*, *consultores*. A single-token cue drawn from any of those makes the
+  unguided floor non-zero on every sample in that sector.
+- **`--limit` stays sector-balanced** — `aia_scenarios` interleaves, so a multiple of 3 keeps the
+  three sectors even. Verified: `--limit 12` gives 4 per sector.

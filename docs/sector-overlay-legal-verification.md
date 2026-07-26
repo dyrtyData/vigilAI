@@ -4,16 +4,23 @@
 `sector`. One row per item: the instrument it is drawn from, its regulatory status, the
 primary-source URL, the operative provision, and the **sourcing tier** behind the claim.
 
-**Date of this pass:** 2026-07-25 (iteration 2, Phase 4 — finance/BACEN slice). Phase 5 appends
-the health (ANVISA / CFM / ANS) and capital-markets (CVM) rows.
+**Dates of the passes recorded here:** 2026-07-25 (iteration 2, **Phase 4** — finance/BACEN slice)
+and 2026-07-25 (**Phase 5** — health ANVISA/CFM/ANS and capital-markets CVM slices). The two
+sections below the finance one carry the Phase 5 rows in the same format.
 
 > ## ⚠️ Not legal advice
 >
 > Every mapping below is a **structural analogy for benchmark design**, not a legal opinion and
-> **not legal advice**. No Brazilian sector regulator has issued a binding AI-specific rule;
-> BACEN has said publicly it will not act before PL 2338/2023 is enacted, and PL 2338 does not
-> name BACEN. What is recorded here is that an *adjacent, binding* obligation exists and what it
+> **not legal advice**. What is recorded here is that an *adjacent* obligation exists and what it
 > says — never that it governs AI. Do not rely on this file for compliance purposes.
+>
+> **No Brazilian sector *regulator* has a binding AI-specific rule in force.** BACEN has said
+> publicly it will not act before PL 2338/2023 is enacted, and PL 2338 does not name BACEN; no
+> CVM instrument uses "inteligência artificial" in an operative clause; ANVISA's SaMD framework
+> is silent on AI and machine learning. The one Brazilian instrument that regulates medical AI
+> directly is **CFM Res. 2.454/2026** — a **physicians' council** resolution, enforced by the
+> Conselho Regional de Medicina against *médicos* rather than by ANVISA against products, and
+> **not in force until 26 August 2026**. Every item drawn from it is marked `not_yet_in_force`.
 
 ## How to read the sourcing tier
 
@@ -28,7 +35,7 @@ that lacks an instrument, a `https://` source URL or a tier from this vocabulary
 that **both the item id and its source URL appear verbatim in this file** — so the code and this
 record cannot drift.
 
-## Access conditions during this pass (stated, because they bound what "primary" means)
+## Access conditions during the Phase 4 pass (stated, because they bound what "primary" means)
 
 - `planalto.gov.br` — **reachable**, HTTP 200, full text rendered. (doc 12 reports `ECONNRESET`
   on every attempt during the 2026-07-24 research pass; that did not reproduce here.)
@@ -42,6 +49,30 @@ record cannot drift.
   BACEN/CMN operative text below is quoted verbatim from a page read in this pass; the operative
   readings come from the 2026-07-25 verification pass that preceded implementation, and each row
   says which.
+
+## Access conditions during the Phase 5 pass
+
+- `sistemas.cfm.org.br` — **reachable**, HTTP 200. **CFM Res. 2.454/2026 was downloaded and read
+  in full** (`.../normas/arquivos/resolucoes/BR/2026/2454_2026.pdf`, 607 KB, 41 KB of extracted
+  text). Every CFM quote below is verbatim from that text, and the "ANVISA is never mentioned"
+  finding is a search over it, not a report of one.
+- `www.in.gov.br` (DOU) — reachable, HTTP 200. **RDC 657/2022 was read in full from the DOU
+  page**; RDC 751/2022, RDC 848/2024, IN 61/2020 and ANS RN 623/2024 have confirmed HTTP 200 DOU
+  permalinks, obtained through the DOU search rather than guessed.
+- `conteudo.cvm.gov.br` — reachable, HTTP 200 for every resolution page cited below
+  (`resol020/021/029/030/035/043/062/080/175/178`). The pages are portal shells, so **no CVM
+  operative text is quoted from a page rendered in this pass**; the operative readings are the
+  cleared verification gate's, and each row says so.
+- **Two ANVISA instruments have no retrievable permalink and the rows say which.** RDC 67/2009
+  predates the current DOU portal (searches return nothing), and Guia 38/2020 is a guide rather
+  than a norm and is not in the DOU at all. Their items point at the nearest official page that
+  does resolve — RDC 657/2022's DOU permalink and ANVISA's own publications index respectively —
+  and the substitution is recorded in the row rather than hidden by it. The same applies to
+  RDC 340/2020, whose companion **IN 61/2020** (published the same day and carrying the three
+  change tiers) does have a permalink.
+- `anbima.com.br` — reachable, HTTP 200. The **Guia Orientativo** itself was not retrieved; the
+  URL recorded is ANBIMA's own *Códigos* page, cited deliberately for the contrast between the
+  binding Códigos and the advisory guide.
 
 ---
 
@@ -410,6 +441,675 @@ practice — which is exactly why the disclosure finding is the paper's headline
 
 ---
 
+## Health — ANVISA / CFM / ANS
+
+Brazil regulates AI-enabled health software through **medical-device law**, not AI law. RDC
+657/2022's full text was read from the DOU in this pass and contains **no** occurrence of
+*"inteligência artificial"* and **none** of *"aprendizado de máquina"* — doc 12's finding,
+reconfirmed rather than repeated.
+
+The one Brazilian instrument that does regulate medical AI directly is **not ANVISA's**. It is
+**CFM Resolução nº 2.454/2026**, and three properties of it govern how every item below is worded:
+
+| | |
+|---|---|
+| **Adopted** | 11 February 2026, at the **5ª Sessão Plenária Extraordinária** (recital, verbatim: *"considerando as deliberações tomadas na 5ª Sessão Plenária Extraordinária, realizada em 11 de fevereiro de 2026"*) |
+| **Published** | DOU 27/02/2026, Edição 39, Seção 1, p. 158; **retificação** DOU 05/03/2026, Edição 43, Seção 1, p. 91 |
+| **In force** | **26 August 2026.** Art. 23, verbatim: *"Esta resolução entra em vigor após decorridos 180 (cento e oitenta) dias da data de sua publicação."* Every CFM item ships with status `not_yet_in_force`, and a test enforces it. |
+| **Who it binds** | **Physicians, not products.** Art. 15: *"As atividades de supervisão e fiscalização do cumprimento desta resolução serão exercidas, no âmbito de suas competências, pelo **Conselho Regional de Medicina** da jurisdição."* Art. 8: *"O descumprimento dos deveres previstos nesta resolução sujeita o **médico** às sanções éticas cabíveis, sem prejuízo das responsabilidades civil e penal aplicáveis."* |
+| **ANVISA** | **Never mentioned anywhere in the resolution.** Searched over the full extracted text: zero occurrences of "ANVISA" or "Anvisa". The physicians-not-products scoping is not an inference. |
+
+---
+
+### `samd_risk_classification_disclosed`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, I (*de facto* analogue) |
+| **Instrument** | RDC 751/2022, **Regra 11** (15 Sep 2022, in force 1 Mar 2023) + RDC 657/2022 (SaMD regularisation, 24 Mar 2022, in force 1 Jul 2022) |
+| **Status** | `binding` |
+| **Source URL** | <https://www.in.gov.br/en/web/dou/-/resolucao-rdc-n-751-de-15-de-setembro-de-2022-430797145> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** RDC 751/2022 introduces **Regra 11**, the classification rule for
+software, transposing the IMDRF SaMD risk logic into Classes I–IV, with Class II the default for
+diagnostic or therapeutic decision support. RDC 657/2022 is the regularisation regime for software
+as a medical device itself.
+
+**Operative text (verbatim, RDC 657/2022, DOU, read in this pass):**
+
+> Art. 1º Esta Resolução dispõe sobre a regularização de **software como dispositivo médico**
+> (Software as a Medical Device - SaMD).
+
+**Not claimed.** That either instrument addresses AI. Neither does.
+
+---
+
+### `clinical_validation_evidence`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, I / Arts. 25-28 (*de facto* analogue) |
+| **Instrument** | RDC 657/2022, Arts. 2 and 12-13 (+ RDC 848/2024, 6 Mar 2024, in force 4 Sep 2024) |
+| **Status** | `binding` |
+| **Source URL** | <https://www.in.gov.br/en/web/dou/-/resolucao-de-diretoria-colegiada-rdc-n-657-de-24-de-marco-de-2022-389603457> |
+| **Sourcing tier** | `primary` — text read in this pass |
+
+**Operative provision.** The Class III/IV dossier requires clinical evaluation and a *valid
+clinical association*, plus analytical and clinical validation, with conformity to **IEC 62304**,
+IEC 62366-1 and ISO 14971 (Art. 13 — the IEC 62304 reference was located in the DOU text in this
+pass). RDC 848/2024 adds the essential safety-and-performance principles across the lifecycle and
+requires clinical data showing a favourable risk-benefit balance for Class III/IV; it **revokes
+RDC 546/2021** and does not specifically address SaMD or AI.
+
+---
+
+### `tecnovigilancia_adverse_event_reporting`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 (*de facto* analogue) |
+| **Instrument** | RDC 67/2009 (21 Dec 2009 — tecnovigilância via **Notivisa**) + RDC 657/2022, Art. 24 |
+| **Status** | `binding` |
+| **Source URL** | <https://www.in.gov.br/en/web/dou/-/resolucao-de-diretoria-colegiada-rdc-n-657-de-24-de-marco-de-2022-389603457> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** Manufacturers, distributors, health services and professionals must notify
+ANVISA through **Notivisa** of adverse events and *"queixas técnicas"*; ANVISA may order field
+actions, recalls or cancellation. RDC 657/2022 Art. 24 carries the SaMD-specific post-market
+monitoring and notification duty. This is the *continuous* half of what an AIA would require.
+
+**Why the URL is RDC 657/2022's and not RDC 67/2009's.** RDC 67/2009 predates the current DOU
+portal and no permalink for it was obtained in this pass; searches returned nothing. The item's URL
+therefore points at the instrument that carries the SaMD-specific half of the same duty, and this
+paragraph exists so the substitution is visible rather than silent.
+
+---
+
+### `software_update_retraining_notification`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 (*de facto* analogue) |
+| **Instrument** | RDC 340/2020 + **IN 61/2020** (both 6 Mar 2020) — three post-registration change tiers |
+| **Status** | `binding` |
+| **Source URL** | <https://www.in.gov.br/en/web/dou/-/instrucao-normativa-in-n-61-de-6-de-marco-de-2020-247280668> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** Post-registration changes fall into three tiers — **não reportável /
+implementação imediata / aprovação requerida** — the last for Class III/IV changes such as a new
+indication. Applied to software, this is the nearest thing Brazilian medical-device law has to a
+model-retraining control.
+
+**Why the URL is IN 61/2020's.** RDC 340/2020 has no retrievable DOU permalink (several title
+forms were searched). IN 61/2020 was published the same day, is the instruction that enumerates
+the tiers, and does have one.
+
+**Deliberately NOT cited — the dropped draft.** doc 12 reports an ANVISA *draft revision of RDC
+657/2022* creating two new software categories, one explicitly covering continuously-learning AI.
+**It is dropped.** Three independent searches found **no consulta pública**: the process sits at
+the pre-consultation Regulatory Impact Assessment stage, the only sourcing is an industry
+association plus one trade-press item that itself calls consultation a *future* step, and there is
+no instrument, no CP number and no draft text. A test sweeps `checklist.py` for the two category
+names, so it cannot be reintroduced by a later pass "completing" the item.
+
+---
+
+### `cybersecurity_lifecycle_management`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 — **expected practice, not duty** |
+| **Instrument** | ANVISA **Guia 38/2020** (GGTPS), internalising IMDRF/CYBER WG/N60 |
+| **Status** | **`non_binding`** |
+| **Source URL** | <https://www.gov.br/anvisa/pt-br/centraisdeconteudo/publicacoes/produtos-para-a-saude> |
+| **Sourcing tier** | `primary` |
+
+**Operative content.** Threat modelling, a software bill of materials, coordinated vulnerability
+disclosure, and end-of-life / end-of-support planning, aligned to ISO 14971, IEC 62304, AAMI TIR57
+and ISO 27000.
+
+**Why the status is `non_binding` (verbatim, from the guide's own text):**
+
+> Trata-se de instrumento regulatório **não normativo, de caráter recomendatório e não
+> vinculante**… A inobservância ao conteúdo deste documento **não caracteriza infração sanitária**,
+> nem constitui motivo para indeferimento de petições.
+
+The item's `article` field therefore reads *"expected practice"* and its `instrument` field carries
+the quote, so the character of the obligation travels with the data rather than living only here. A
+test asserts both.
+
+**Why the URL is an index.** The guide has no stable permalink; the URL is ANVISA's own
+publications index for *produtos para a saúde*, which resolves. The quote above comes from the
+cleared verification pass, not from a page rendered here.
+
+---
+
+### `clinician_human_oversight_override`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, III (*de facto* analogue) |
+| **Instrument** | CFM Res. 2.454/2026, **Arts. 4-I, 14 par. único and 19 §1** |
+| **Status** | **`not_yet_in_force`** — adopted 11 Feb 2026, in force **26 Aug 2026** |
+| **Source URL** | <https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2026/2454> |
+| **Sourcing tier** | `primary` — full text read in this pass |
+
+**Operative text (verbatim):**
+
+> Art. 4° Constituem deveres do médico na utilização de sistemas de Inteligência Artificial na
+> medicina: I – empregar a IA exclusivamente como ferramenta de apoio, mantendo-se como
+> **responsável final pelas decisões clínicas**, diagnósticas, terapêuticas e prognósticas;
+>
+> Art. 14, parágrafo único. As soluções apresentadas pelos modelos, sistemas e aplicações de IA
+> **não são soberanas, sendo obrigatória a supervisão humana.**
+>
+> Art. 19. A autonomia do médico também consiste no […] seu direito de não utilizar ou de desligar
+> modelos, sistemas e aplicações de IA aplicados à medicina que julgar inadequados em dada
+> situação […] § 1° **Nenhum médico será penalizado** por optar em não seguir a orientação de uma
+> solução de IA, desde que atue de acordo com os preceitos técnicos e éticos.
+
+**This is the strongest Art. 6, III analogue anywhere in the three sectors** — and it is not in
+force yet. Contrast the finance overlay, where LGPD Art. 20 is silent on *who* reviews and the §3
+that would have required a person was vetoed.
+
+---
+
+### `patient_ai_disclosure`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 5, I (*de facto* analogue) |
+| **Instrument** | CFM Res. 2.454/2026, **Art. 5 §1** (+ §2 and Art. 11) |
+| **Status** | **`not_yet_in_force`** — 26 Aug 2026 |
+| **Source URL** | <https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2026/2454> |
+| **Sourcing tier** | `primary` — text read in this pass |
+
+**Operative text (verbatim):**
+
+> § 1° O paciente tem o direito de ser informado, **de forma clara e acessível**, quando modelos,
+> sistemas e aplicações de IA forem utilizados **como apoio relevante** em seu cuidado, diagnóstico
+> ou tratamento.
+>
+> § 2° É vedado ao médico delegar à IA a comunicação de diagnósticos, prognósticos ou decisões
+> terapêuticas, **sem a devida mediação humana**.
+
+**Why this row matters beyond its own sector.** PL 2338 Art. 5, I is the paper's headline right,
+and the three overlays answer it three different ways: a **gap** in banking, an **adopted but not
+yet effective** duty here, and a **gap** in capital markets. A test pins the three-way split.
+
+---
+
+### `algorithmic_bias_monitoring_health`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 5, III (*de facto* analogue) — the **only** Art. 5, III item in any overlay |
+| **Instrument** | CFM Res. 2.454/2026, **Anexo III-II** (+ Anexo I-XIV) |
+| **Status** | **`not_yet_in_force`** — 26 Aug 2026 |
+| **Source URL** | <https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2026/2454> |
+| **Sourcing tier** | `primary` — text read in this pass |
+
+**Operative text (verbatim, Anexo III-II):**
+
+> implementação de procedimentos de **monitoramento contínuo dos outputs** da IA, com análise de
+> **resultados estratificados** para identificar possíveis vieses (por exemplo, **diferenças de
+> acurácia entre grupos populacionais**). Havendo detecção de viés indevido, deverão ser adotadas
+> de imediato **medidas corretivas**, como o ajuste do modelo, **retreinamento com dados mais
+> balanceados** ou restrição de uso […]
+
+Anexo I-XIV defines *"viés discriminatório ilegal ou abusivo"* with the example of denying or
+delaying treatment on grounds of race or gender.
+
+---
+
+### `contestability_second_opinion_health`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, II (*de facto* analogue) |
+| **Instrument** | CFM Res. 2.454/2026, **Anexo I-XX** + **Art. 10-II** |
+| **Status** | **`not_yet_in_force`** — 26 Aug 2026 |
+| **Source URL** | <https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2026/2454> |
+| **Sourcing tier** | `primary` — text read in this pass |
+
+**Operative text (verbatim):**
+
+> XX. **Contestabilidade**: a possibilidade de questionamento e revisão dos resultados gerados pela
+> IA, seja por intervenção humana direta (revisão pelo profissional responsável) ou por mecanismos
+> formais de recurso, de modo que **nenhuma decisão derivada de IA seja absolutamente definitiva
+> sem possibilidade de correção**.
+>
+> Art. 10 […] II - direito à obtenção de **segunda opinião**;
+
+---
+
+### `health_aia_public_conclusions_disclosure`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 28 (*de facto* analogue) |
+| **Instrument** | CFM Res. 2.454/2026, **Anexo I-XIII** + Anexo III-I |
+| **Status** | **`not_yet_in_force`** — 26 Aug 2026 |
+| **Source URL** | <https://sistemas.cfm.org.br/normas/visualizar/resolucoes/BR/2026/2454> |
+| **Sourcing tier** | `primary` — text read in this pass |
+
+**Operative text (verbatim, Anexo I-XIII, the definition of *avaliação de impacto algorítmico*):**
+
+> […] a **análise contínua dos impactos** de um sistema de IA sobre direitos e interesses dos
+> pacientes, profissionais e demais envolvidos, identificando medidas preventivas, mitigadoras de
+> danos e formas de maximizar impactos positivos. A AIA deve ser **documentada e atualizada
+> periodicamente**, **sem violar segredos industriais** ou propriedade intelectual da solução de IA
+> utilizada.
+
+**Worth stating in the paper.** CFM uses the term *"avaliação de impacto algorítmico"* itself, with
+the same trade-secret carve-out PL 2338 Art. 28 uses. It is the only Brazilian sector instrument
+that does — and it is a physicians' council, not a regulator.
+
+---
+
+### `coverage_denial_written_justification_ans`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, I/II (*de facto* analogue) |
+| **Instrument** | ANS **RN 623/2024**, Art. 14 §2 (17 Dec 2024; most provisions in force 1 Jul 2025) |
+| **Status** | `binding` |
+| **Source URL** | <https://www.in.gov.br/en/web/dou/-/resolucao-normativa-ans-n-623-de-17-de-dezembro-de-2024-602962514> |
+| **Sourcing tier** | **`corroborated_secondary`** |
+
+**Operative provision.** Any denial must be reduced to a clear **written justification citing the
+specific contractual clause or legal basis**, printable and downloadable by the beneficiary.
+Art. 13 sets the response SLAs (urgent: immediate; ordinary assistance: 5 business days;
+high-complexity or elective admission: 10).
+
+**Publication confirmed from a primary DOU record in this pass.** The DOU rectification of 23 Dec
+2024 (Edição 246, Seção 1, p. 357) states, verbatim: *"Na Resolução Normativa nº 623, de 17 de
+dezembro de 2024, publicada no Diário Oficial da União nº 244, Seção 1, em 19 de dezembro de 2024,
+página 285 a 287…"* — which fixes the instrument's date, its DOU pages, and that it was rectified.
+
+**Why the weaker tier, stated rather than glossed.** The 2026-07-25 verification gate that cleared
+this phase covered the ANVISA, CFM and CVM instruments; it did **not** reach ANS RN 623/2024, and
+the operative Arts. 14/16 text was not read from a primary page here. doc 12 records it as binding
+with no unverified flag and the repo's `explanation_quality` `health_coverage` domain already rests
+on the same reading, so the item ships — at `corroborated_secondary`, which is what that tier is
+for. Anything the paper says about RN 623/2024 must carry that qualification.
+
+**Not an AI rule.** RN 623/2024 does not mention automated decision-making at all.
+
+---
+
+### `coverage_denial_appeal_ombudsman_ans`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, III (*de facto* analogue) |
+| **Instrument** | ANS RN 623/2024, **Art. 16** — ombudsman reanalysis within **7 business days** |
+| **Status** | `binding` |
+| **Source URL** | <https://www.in.gov.br/en/web/dou/-/resolucao-normativa-ans-n-623-de-17-de-dezembro-de-2024-602962514> |
+| **Sourcing tier** | **`corroborated_secondary`** — same reason as the row above |
+
+**Operative provision.** The beneficiary may ask the operator's *ouvidoria* to reanalyse a denial,
+answered within **7 business days**; non-compliance carries a fine of up to R$ 30,000.
+
+---
+
+### The confirmed health-sector coverage gap — stated, not papered over
+
+**A consumer health app that is neither a registered SaMD nor physician-mediated falls outside
+both regimes.** Two independent exclusions meet:
+
+1. **RDC 657/2022 Art. 1 §2, I** excludes wellness software. Verbatim, read from the DOU text in
+   this pass:
+
+   > § 2º Esta Resolução **não se aplica** aos seguintes softwares: I - **para bem-estar**; II -
+   > relacionado em lista disponibilizada pela Agência Nacional de Vigilância Sanitária (Anvisa) de
+   > produtos não regulados; III - utilizado exclusivamente para gerenciamento administrativo e
+   > financeiro em serviço de saúde; IV - que processa dados médicos demográficos e epidemiológicos,
+   > sem qualquer finalidade clínica diagnóstica ou terapêutica; e V - embarcado em dispositivo
+   > médico […]
+
+2. **CFM Res. 2.454/2026 binds only *médicos*** — Art. 8 (ethical sanctions on the physician) and
+   Art. 15 (enforcement by the Conselho Regional de Medicina).
+
+So an app that is not intended for prevention, diagnosis, treatment or rehabilitation, and that no
+physician mediates, has **no sectoral health overlay at all** — only the generic LGPD and (if
+enacted) PL 2338 duties. **No item asserts otherwise**, and the README says so in the same words.
+It is deliberately *not* shipped as a gap item: a gap item measures whether a deployer voluntarily
+exceeds a duty, and here the whole regime is absent rather than one duty within it.
+
+---
+
+## Capital markets — CVM
+
+**No CVM instrument, Parecer de Orientação or Ofício Circular uses "inteligência artificial" in an
+operative clause.** The 2021 ICVM → Resolução renumbering restated pre-existing conduct and
+suitability rules in technology-neutral language, and Brazilian robo-advisors (Magnetis, Vérios,
+Warren) are licensed as ordinary *administradores de carteiras* — there is no robo-advisor licence.
+
+Every CVM page cited below returned **HTTP 200** in this pass, but the pages are portal shells that
+do not render the normative text, so no CVM operative text is quoted from a page read here. The
+operative readings are the cleared 2026-07-25 verification gate's.
+
+---
+
+### `algo_source_code_disclosure_cvm`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, I (*de facto* analogue) — **regulator-facing, not investor-facing** |
+| **Instrument** | **Res. CVM 21 (25 Feb 2021)**, Art. 19 sole ¶ (replaced ICVM 558/2015) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol021.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative text (verbatim):**
+
+> **Parágrafo único.** O **código-fonte** do sistema automatizado ou o algoritmo deve estar
+> disponível para a **inspeção da CVM na sede da empresa em versão não compilada**.
+
+**Correction to doc 12 — the date.** doc 12 hedges "25/26 Feb 2021". It is **25 February 2021**;
+the hedge is dropped.
+
+**Scope, stated because it is the whole point of the item.** The duty runs to **the regulator**.
+Nothing in Res. CVM 21 requires investor-facing disclosure of anything, which is why the Art. 5, I
+gap item below exists.
+
+---
+
+### `algo_accountability_retention`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, III (*de facto* analogue) |
+| **Instrument** | Res. CVM 21 (25 Feb 2021), Art. 19 caput (+ **Art. 8 §8**, audit trails) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol021.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative text (verbatim, Art. 19 caput):**
+
+> A prestação de serviço de administração de carteira de valores mobiliários com a utilização de
+> sistemas automatizados ou algoritmos está sujeita às obrigações e regras previstas na presente
+> Resolução e **não mitiga as responsabilidades do administrador**.
+
+**Art. 8 §8** requires the computational resources to be *"protegidos contra adulterações"* with
+audit trails retained. **Art. 24** requires information-security controls and periodic security
+testing — cited under `intermediary_infosec_cyber_policy` below, because it is the portfolio
+manager's counterpart to Res. CVM 35 Art. 45.
+
+---
+
+### `suitability_profile_match`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, I (weak) — **deliberately NOT an Art. 5, III item** |
+| **Instrument** | Res. CVM 30 (12 May 2021), **Art. 3, I–III** (replaced ICVM 539/2013) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol030.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** Before recommending, an intermediary must verify that the product suits
+the client's **investment objectives**, that the client's **financial situation** is compatible
+with it, and that the client has the **knowledge to understand the risks** (Art. 3, I–III). Profile
+update at most every 5 years; category reclassification at most every 24 months.
+
+**Why there is no Art. 5, III capital-markets item, and why that is a legal finding rather than an
+omission.** Suitability is a **matching** duty: differentiating by objectives, financial situation
+and risk knowledge is the *statutory purpose* of the rule. An anti-discrimination item scored
+against it would penalise compliant behaviour as bias — the benchmark would mark a firm down for
+doing exactly what Brazilian securities law requires. `test_no_capital_item_asserts_an_art_5_iii_duty`
+refuses any capital item that cites Art. 5, III, and the only Art. 5, III item in the whole
+three-sector overlay is health's `algorithmic_bias_monitoring_health`.
+
+---
+
+### `ombudsman_redress_channel`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, II (*de facto* analogue) |
+| **Instrument** | **Res. CVM 43 (17 Aug 2021)**, am. Res. CVM 179/2023 (replaced ICVM 529) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol043.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** A mandatory *ouvidoria* for members of the distribution system and for
+custody providers, with adequate resources and access to information, plus half-yearly reports due
+60 days after 30 June and 31 December.
+
+**Correction to doc 12 — the date.** doc 12 says 18 August 2021. It is **17 August 2021**.
+
+**Not claimed.** That it is automated-decision-specific. It is a general-purpose channel, and the
+item says so.
+
+---
+
+### `fund_essential_provider_accountability`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 6, III / Arts. 25-28 (*de facto* analogue) |
+| **Instrument** | Res. CVM 175 (23 Dec 2022, in force 2 Oct 2023), **Art. 81** |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol175.html> |
+| **Sourcing tier** | **`primary`** — doc 12's `[UNVERIFIED]` flag is cleared |
+
+**Operative provision.** The fund's **essential service providers answer to the CVM for their own
+acts and omissions**, replacing automatic joint-and-several liability with individually defined
+responsibility, including for outsourced functions.
+
+**doc 12's two open questions, both resolved.** doc 12 marks *"Art. 81 citation + 'no algorithm
+clause' conclusion `[UNVERIFIED]`"* because the consolidated PDF could not be rendered. The
+verification gate reached it: **the article number and its content are both correct**, and a
+full-text search of the 399 consolidated pages returned **zero** hits for *"inteligência"*,
+*"algoritmo"* and *"automatizado"*. Both halves confirmed.
+
+---
+
+### `intermediary_infosec_cyber_policy`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 (*de facto* analogue) |
+| **Instrument** | Res. CVM 35 (26 May 2021), **Art. 45** — cf. Res. CVM 21, Art. 24 |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol035.html> |
+| **Sourcing tier** | **`primary`** — doc 12's `[UNVERIFIED]` flag is cleared |
+
+**Operative provision.** **Art. 45** requires a cybersecurity programme with **identification and
+assessment of risks** and **measures to reduce vulnerabilities**, alongside the information-security
+policy covering client-data control, incident-relevance and notification criteria, and third-party
+contracting.
+
+**Why the instrument names two resolutions.** Res. CVM 35 binds *intermediários*; **Res. CVM 21
+Art. 24** carries the parallel duty (information-security controls plus periodic security testing)
+for *administradores de carteiras*. Naming both is what lets the item be scored on a portfolio
+manager's deployment without asserting that Res. CVM 35 reaches it. doc 12's `[UNVERIFIED]` on the
+Art. 45 reference rested on a single secondary source; the gate confirmed it against primary text.
+
+---
+
+### `advisor_conflict_and_fee_disclosure`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 5, I-adjacent |
+| **Instrument** | Res. CVM 178 and 179 (14 Feb 2023) — *assessor de investimento* framework |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol178.html> |
+| **Sourcing tier** | **`corroborated_secondary`** |
+
+**Operative provision.** Multi-broker affiliation, mandatory **compensation and conflict-of-interest
+disclosure**, a responsible director, quantitative and qualitative compensation disclosure on a
+public webpage, and **quarterly client statements**.
+
+**Why the weaker tier.** The verification gate confirmed the other CVM instruments cited in this
+module against primary text but **did not reach Res. CVM 178/179**. doc 12 records it as binding
+with no unverified flag, so the item ships at `corroborated_secondary` rather than being promoted.
+
+**Scope, stated.** It discloses **who pays whom**, never whether a recommendation was
+machine-generated. That is why it is Art. 5, I-*adjacent* and why the Art. 5, I gap item exists.
+
+---
+
+### `analyst_report_conflict_disclosure`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 5, I-adjacent |
+| **Instrument** | Res. CVM 20 (26 Feb 2021) — securities analysts (replaced ICVM 598/2018) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol020.html> |
+| **Sourcing tier** | **`corroborated_secondary`** — same reason as the row above |
+
+**Operative provision.** A securities analyst may not omit conflicts of interest from an analysis
+report. **There is no express text on AI-assisted report generation** — the gap the item is
+adjacent to.
+
+---
+
+### `market_manipulation_tech_neutral`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | market integrity (weak) — **not a bias or fairness rule** |
+| **Instrument** | Res. CVM 62 (19 Jan 2022), replacing **Instrução CVM 8/1979** + Deliberação 14/1983 |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol062.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** Prohibits *"criação de condições artificiais de demanda, oferta ou preço"*,
+*"manipulação de preço"*, *"operação fraudulenta"* and *"prática não equitativa"*.
+
+**Technology-neutral, and that is the finding.** It does not name algorithms, HFT or AI. Brazil has
+**no CVM instrument that licenses or even defines algorithmic trading**; what exists sits in B3's
+access manuals (identification of the professional responsible for an order-submission algorithm,
+comitente identification for HFT flow, pre-trade risk limits) and BSM's surveillance — exchange and
+self-regulatory infrastructure, not CVM rules.
+
+---
+
+### `ai_vendor_procurement_diligence_selfreg`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 — **advisory only, no enforcement** |
+| **Instrument** | **ANBIMA "Guia Orientativo"** for procuring AI systems (18 Dec 2025) |
+| **Status** | **`self_regulatory`** |
+| **Source URL** | <https://www.anbima.com.br/pt_br/autorregular/codigos/> |
+| **Sourcing tier** | **`corroborated_secondary`** |
+
+**Operative content.** Governance and risk (information security, data protection, regulatory
+compliance, operational risk), **vendor-maturity assessment**, technical and contractual due
+diligence, and **post-implementation monitoring and audit**.
+
+**The precision the verification gate insisted on.** Calling this "self-regulatory" is not enough.
+ANBIMA issues two different kinds of document: **Códigos de Regulação e Melhores Práticas**, which
+bind adhering institutions and carry an enforcement mechanism, and **Guias Orientativos**, which are
+advisory and carry **no adherence and no enforcement mechanism at all**. The AI-procurement document
+is the second kind. The item's `instrument` field says so verbatim and a test asserts it, because
+"self-regulation" alone would overstate the obligation by a whole category.
+
+**It is nevertheless the most directly AI-specific document in the entire Brazilian capital-markets
+ecosystem — and it is not the regulator's.** Worth one sentence in the paper.
+
+**Why the URL is the Códigos page.** The guide itself was not retrieved; the URL points at ANBIMA's
+own Códigos index, cited deliberately for the contrast the row turns on.
+
+---
+
+### `risk_factor_public_disclosure`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 (weak) |
+| **Instrument** | Res. CVM 80 (2022), **Formulário de Referência Item 4** (replaced ICVM 480/2009) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol080.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** The issuer must rank and describe its top risk factors in **Item 4** of the
+*formulário de referência*; **ESG and climate factors are confirmed mandatory**.
+
+**Not claimed.** An AI or model-risk category. None could be confirmed to exist — which is why the
+mapping is weak and why the gap item below is the honest way to represent Arts. 25-28 in this
+sector.
+
+---
+
+### `sandbox_experimental_authorization`
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 (soft) |
+| **Instrument** | Res. CVM 29 (May 2021) — regulatory sandbox (replaced ICVM 626/2020) |
+| **Status** | `binding` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol029.html> |
+| **Sourcing tier** | `primary` |
+
+**Operative provision.** Temporary, conditioned authorisation plus CVM monitoring for innovative
+business models, **including automated advice**.
+
+**Under-delivering, and the paper should say the numbers.** **4 of 33** applicants have ever been
+authorised — **Basement, Vórtx QR Tokenizadora, BEE4 and SMU/Estar** — all blockchain or
+tokenisation, and **none AI or robo-advisory**. One admission cycle since 2021; the Art. 18
+monitoring reports are unpublished. So the one CVM instrument built to host an experimental
+automated-advice model has never hosted one.
+
+---
+
+### Capital-markets gap-flagging items
+
+#### `algo_impact_public_disclosure_gap_cvm` ⭐
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Arts. 25-28 — **GAP** |
+| **Nearest instruments** | Res. CVM 21 Art. 19 sole ¶; Res. CVM 175; Res. CVM 80 Item 4 |
+| **Status** | `gap` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol175.html> |
+| **Sourcing tier** | `primary` |
+
+**The clearest gap in the whole three-sector mapping, and it is clean rather than stretched.** Each
+nearest instrument falls short in a *different* direction, which is what makes the negative claim
+checkable:
+
+| Nearest instrument | What it gives | What it stops short of |
+|---|---|---|
+| Res. CVM 21, Art. 19 sole ¶ | **the regulator** may inspect the source code at the firm's premises, uncompiled | it is inspection access, not a published assessment; the public gets nothing |
+| Res. CVM 175 | a mandatory risk-management policy | it **never mentions models**: zero hits for "inteligência", "algoritmo" and "automatizado" across 399 consolidated pages |
+| Res. CVM 80, Item 4 | public risk-factor disclosure by issuers | **no AI or model-risk category** could be confirmed to exist |
+
+**No CVM instrument requires publication of anything AIA-shaped.** The item therefore tests
+*voluntary excess*: does the deployer publish the conclusions of a model impact assessment to the
+people whose money it allocates? Its cue set is a three-way conjunction (publication verb +
+investor audience + the assessment itself) precisely so that merely mentioning the PL 2338 AIA —
+which every answer in this sector does, because the prompt asks about it — cannot earn it.
+
+#### `ai_recommendation_disclosure_gap_cvm` ⭐
+
+| | |
+|---|---|
+| **PL 2338 mapping** | Art. 5, I — **GAP** |
+| **Nearest instruments** | Res. CVM 21 Art. 19; Res. CVM 178/179 + Res. CVM 20 |
+| **Status** | `gap` |
+| **Source URL** | <https://conteudo.cvm.gov.br/legislacao/resolucoes/resol021.html> |
+| **Sourcing tier** | `primary` |
+
+**What the nearest instruments require.** Res. CVM 21 Art. 19 requires only that **the CVM** be able
+to inspect the source code. Res. CVM 178/179 and Res. CVM 20 require disclosure of **who pays whom**
+and of the analyst's conflicts. **Nothing requires telling an investor that a recommendation, an
+allocation or an order was produced by a machine.**
+
+**The third leg of the paper's headline.** PL 2338 Art. 5, I is a **gap** in banking (CDC Art. 6, III
+covers the product, not the channel), an **adopted but not-yet-effective** duty in health (CFM
+Res. 2.454/2026 Art. 5 §1, from 26 Aug 2026), and a **gap** here. Three sectors, three different
+answers to the same right, and a test pins the split so a later edit cannot flatten it.
+
+---
+
 ## Summary of corrections to `12-research-sector-overlays-and-framing.md`
 
 Recorded here so the research document can be amended, and so the paper does not reproduce an
@@ -425,10 +1125,65 @@ error this pass caught.
 | 6 | Res. Conjunta 6/2023 — correction right for a wrongly-flagged individual `[UNVERIFIED]` | **Confirmed open.** Left open, not resolved. Shipped with sourcing tier `open`. |
 | 7 | Open Finance imposes explainability / ML-audit duties (marked do-not-cite) | **Confirmed do-not-cite.** Nothing supports it. Only existence and dates are cited; no explainability cue ships. |
 
-## Sourcing-tier census (finance slice)
+### Phase 5 corrections — health and capital markets
+
+| # | doc 12 says | Verified position |
+|---|---|---|
+| 8 | ANVISA **draft revision of RDC 657/2022** creating *software adaptável* / *software específico*, the latter covering continuously-learning AI | **DROPPED.** Three independent searches found **no consulta pública**. The process is at the pre-consultation Regulatory Impact Assessment stage; the only sourcing is an industry association plus one trade-press item that itself calls consultation a *future* step. No instrument, no CP number, no draft text. Cited nowhere; a test sweeps `checklist.py` for both category names. |
+| 9 | **CNS Res. 738** dated 07/11/2024 (with the date flagged `[UNVERIFIED]`) | **Corrected: 01 February 2024.** The November stamp is an aggregator error — the same date appears on a *different* resolution, which is a batch-scrape tell. The separately-sourced observation that first DOU publication was **21 Jan 2025** and required republication for *"incorreções no original"* is genuine and kept. **No item rests on CNS Res. 738**; it is a boundary condition for research ethics, recorded here so the paper does not reproduce the wrong date. |
+| 10 | **Res. CVM 43** dated 18 Aug 2021 | **Corrected: 17 August 2021.** |
+| 11 | **Res. CVM 21** dated "25/26 Feb 2021" | **Corrected: 25 February 2021.** Hedge dropped. |
+| 12 | ANBIMA's AI-procurement document is "self-regulatory" | **Sharpened.** It is a **Guia Orientativo** — advisory, with **no adherence and no enforcement mechanism at all** — which is a weaker category than ANBIMA's binding *Códigos de Regulação e Melhores Práticas*. "Self-regulatory" alone overstates it by a whole category. Recorded in the item's `instrument` field and asserted by a test. |
+| 13 | Res. CVM 175 **Art. 81** citation and the "no algorithm clause" conclusion, both `[UNVERIFIED]` | **Both confirmed.** Article number and content correct; a full-text search of the 399 consolidated pages returned **zero** hits for *"inteligência"*, *"algoritmo"* and *"automatizado"*. Tier promoted to `primary`. |
+| 14 | Res. CVM 35 **Art. 45** reference `[UNVERIFIED — single secondary source]` | **Confirmed** against primary text: a cybersecurity programme with risk identification/assessment and vulnerability-reduction measures. Tier promoted to `primary`. |
+| 15 | Res. CVM 29 sandbox participant count `[UNVERIFIED — single secondary source]` | **Confirmed: 4 of 33 authorised** — Basement, Vórtx QR Tokenizadora, BEE4, SMU/Estar — all blockchain/tokenisation, **none AI**. |
+| 16 | Res. CVM 80 Item 4: "no mandatory AI/model-risk category could be confirmed" `[UNVERIFIED]` | **Confirmed as an absence.** Risk factors and ESG are mandatory; no AI/model category was found. The item is labelled a weak analogue and the Arts. 25-28 gap item carries the negative claim. |
+| 17 | Res. CVM 30 as a possible Art. 5, III analogue (doc 12 already recommends against) | **Confirmed and enforced.** Art. 3, I–III *requires* differentiation by objectives, financial situation and risk knowledge. An Art. 5, III item scored against it would penalise compliant behaviour as bias. A test refuses any capital item citing Art. 5, III. |
+| 18 | CFM Res. 2.454/2026 "published DOU 27 Feb 2026 (retif. 5 Mar)", in force ~26 Aug 2026 | **Confirmed and completed from the full text.** Adopted **11 Feb 2026** (5ª Sessão Plenária Extraordinária); DOU 27/02/2026 Ed. 39 Seç. 1 p. 158; retificação DOU 05/03/2026 Ed. 43 Seç. 1 p. 91; in force **26 Aug 2026** (Art. 23, 180 days). **ANVISA is never mentioned in the resolution** — Art. 15 gives enforcement to the CRM and Art. 8 imposes *"sanções éticas cabíveis"* on the *médico*. The physicians-not-products scoping is confirmed, not inferred. |
+| 19 | RDC 657/2022 is silent on AI/ML; Art. 1 §2 excludes wellness software | **Both reconfirmed from the DOU text in this pass.** Zero occurrences of *"inteligência artificial"* or *"aprendizado de máquina"*; Art. 1 §2, I excludes *"software para bem-estar"* verbatim. |
+| 20 | Lei 14.874/2024 in force 27 Aug 2024 | **Kept, with the missing half added:** its *regulamentação* only landed via **Decreto 12.651/2025 on 7 Oct 2025**. No item rests on it; recorded because the paper may cite it as a boundary condition. |
+
+## Sourcing-tier census
+
+### Finance slice (Phase 4)
 
 | Tier | Items |
 |---|---|
 | `primary` | `ouvidoria_channel`, `cadastro_positivo_criteria_disclosure`, `cadastro_positivo_contestation`, `credit_model_governance`, `pix_med_contestation`, `integrated_risk_management_framework`, `open_finance_consent_automated_credit`, `human_review_gap_lgpd20`, `ai_interaction_disclosure_gap` |
 | `corroborated_secondary` | `cybersecurity_cloud_vendor_accountability`, `pix_fraud_blocking_no_analogue` |
 | `open` | `fraud_data_sharing_due_process` |
+
+### Health slice (Phase 5)
+
+| Tier | Items |
+|---|---|
+| `primary` | `samd_risk_classification_disclosed`, `clinical_validation_evidence`, `tecnovigilancia_adverse_event_reporting`, `software_update_retraining_notification`, `cybersecurity_lifecycle_management`, `clinician_human_oversight_override`, `patient_ai_disclosure`, `algorithmic_bias_monitoring_health`, `contestability_second_opinion_health`, `health_aia_public_conclusions_disclosure` |
+| `corroborated_secondary` | `coverage_denial_written_justification_ans`, `coverage_denial_appeal_ombudsman_ans` |
+| `open` | — |
+
+### Capital-markets slice (Phase 5)
+
+| Tier | Items |
+|---|---|
+| `primary` | `algo_source_code_disclosure_cvm`, `algo_accountability_retention`, `suitability_profile_match`, `ombudsman_redress_channel`, `fund_essential_provider_accountability`, `intermediary_infosec_cyber_policy`, `market_manipulation_tech_neutral`, `risk_factor_public_disclosure`, `sandbox_experimental_authorization`, `algo_impact_public_disclosure_gap_cvm`, `ai_recommendation_disclosure_gap_cvm` |
+| `corroborated_secondary` | `advisor_conflict_and_fee_disclosure`, `analyst_report_conflict_disclosure`, `ai_vendor_procurement_diligence_selfreg` |
+| `open` | — |
+
+## Regulatory-character census (all three sectors)
+
+The column that lets a reader tell "the model failed" from "the law is silent", and from "the law
+exists but is not in force yet".
+
+| Status | Count | Items |
+|---|---|---|
+| `binding` | 26 | the finance items other than the three ⭐, plus the four ANVISA health items, the two ANS items, and the nine binding CVM items |
+| `not_yet_in_force` | 5 | every CFM Res. 2.454/2026 item — `clinician_human_oversight_override`, `patient_ai_disclosure`, `algorithmic_bias_monitoring_health`, `contestability_second_opinion_health`, `health_aia_public_conclusions_disclosure`. In force **26 Aug 2026**. |
+| `gap` ⭐ | 5 | `human_review_gap_lgpd20`, `pix_fraud_blocking_no_analogue`, `ai_interaction_disclosure_gap` (finance); `algo_impact_public_disclosure_gap_cvm`, `ai_recommendation_disclosure_gap_cvm` (capital markets). **Health has none** — CFM fills the space, it just is not in force. |
+| `non_binding` | 1 | `cybersecurity_lifecycle_management` (ANVISA Guia 38/2020, *"caráter recomendatório e não vinculante"*) |
+| `self_regulatory` | 1 | `ai_vendor_procurement_diligence_selfreg` (ANBIMA **Guia Orientativo** — advisory, no enforcement) |
+
+**The one-line reading of the three-sector overlay.** Not one of the 38 sector items is an
+AI-specific rule that is both binding and in force today. The nearest thing is a **physicians'
+council resolution that starts on 26 August 2026**, and the most directly AI-specific document in
+capital markets is an **advisory guide from a trade association**. That is the sector picture the
+paper reports, and it is why the gap items are the interesting ones.

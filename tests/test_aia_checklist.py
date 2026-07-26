@@ -57,11 +57,16 @@ from vigilai.tasks.aia_checklist.checklist import AIA_CHECKLIST
 from vigilai.tasks.aia_checklist.checklist import aia_checklist_scorer
 from vigilai.tasks.aia_checklist.checklist import AIAItem
 from vigilai.tasks.aia_checklist.checklist import ALL_AIA_ITEMS
+from vigilai.tasks.aia_checklist.checklist import CAPITAL_ITEMS
 from vigilai.tasks.aia_checklist.checklist import detect_items
 from vigilai.tasks.aia_checklist.checklist import FINANCE_ITEMS
 from vigilai.tasks.aia_checklist.checklist import GAP_ITEM_IDS
+from vigilai.tasks.aia_checklist.checklist import HEALTH_ITEMS
 from vigilai.tasks.aia_checklist.checklist import items_for_sector
 from vigilai.tasks.aia_checklist.checklist import ITEM_GAP
+from vigilai.tasks.aia_checklist.checklist import ITEM_NON_BINDING
+from vigilai.tasks.aia_checklist.checklist import ITEM_NOT_YET_IN_FORCE
+from vigilai.tasks.aia_checklist.checklist import ITEM_SELF_REGULATORY
 from vigilai.tasks.aia_checklist.checklist import ITEM_STATUSES
 from vigilai.tasks.aia_checklist.checklist import score_checklist
 from vigilai.tasks.aia_checklist.checklist import SECTOR_CAPITAL
@@ -72,9 +77,12 @@ from vigilai.tasks.aia_checklist.checklist import SECTOR_REFERENCE_ANSWERS
 from vigilai.tasks.aia_checklist.checklist import SECTOR_REGIME_PT
 from vigilai.tasks.aia_checklist.checklist import SECTORS
 from vigilai.tasks.aia_checklist.checklist import SOURCING_TIERS
+from vigilai.tasks.aia_checklist import scenario as scenario_module
 from vigilai.tasks.aia_checklist.scenario import AIA_SCENARIOS
 from vigilai.tasks.aia_checklist.scenario import aia_scenarios
 from vigilai.tasks.aia_checklist.scenario import DEPLOYER_PROVENANCE_PREFIX
+from vigilai.tasks.aia_checklist.scenario import FRAME_LICENCE
+from vigilai.tasks.aia_checklist.scenario import items_for_scenario
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_GUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_UNGUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODES
@@ -170,12 +178,12 @@ class TestSectorVocabulary:
     def test_every_sector_has_an_entry_in_sector_items(self) -> None:
         assert set(SECTOR_ITEMS) == set(SECTORS)
 
-    def test_phase_four_ships_finance_only(self) -> None:
-        """Phase 5 appends health and capital markets; Phase 4 ships the finance slice."""
+    def test_all_three_sectors_ship_items(self) -> None:
+        """Phase 4 shipped finance; Phase 5 appended health and capital markets as pure data."""
         assert SECTOR_ITEMS[SECTOR_FINANCE] is FINANCE_ITEMS
-        assert FINANCE_ITEMS
-        assert SECTOR_ITEMS[SECTOR_HEALTH] == []
-        assert SECTOR_ITEMS[SECTOR_CAPITAL] == []
+        assert SECTOR_ITEMS[SECTOR_HEALTH] is HEALTH_ITEMS
+        assert SECTOR_ITEMS[SECTOR_CAPITAL] is CAPITAL_ITEMS
+        assert (len(FINANCE_ITEMS), len(HEALTH_ITEMS), len(CAPITAL_ITEMS)) == (12, 12, 14)
 
     def test_every_sector_item_declares_its_own_sector(self) -> None:
         for sector, items in SECTOR_ITEMS.items():
@@ -185,8 +193,8 @@ class TestSectorVocabulary:
     def test_items_for_sector_is_cross_sector_plus_that_sector(self) -> None:
         assert items_for_sector(None) == list(AIA_CHECKLIST)
         assert items_for_sector(SECTOR_FINANCE) == list(AIA_CHECKLIST) + FINANCE_ITEMS
-        # A sector with no items yet still resolves — to the cross-sector set alone.
-        assert items_for_sector(SECTOR_HEALTH) == list(AIA_CHECKLIST)
+        assert items_for_sector(SECTOR_HEALTH) == list(AIA_CHECKLIST) + HEALTH_ITEMS
+        assert items_for_sector(SECTOR_CAPITAL) == list(AIA_CHECKLIST) + CAPITAL_ITEMS
 
     def test_items_for_sector_rejects_an_unknown_sector(self) -> None:
         with pytest.raises(ValueError, match="unknown sector"):
@@ -196,15 +204,45 @@ class TestSectorVocabulary:
         for item in ALL_AIA_ITEMS:
             assert item.status in ITEM_STATUSES, item.id
 
-    def test_the_three_gap_items_are_flagged(self) -> None:
-        """The gap-flagging items doc 12 marks ⭐ — a low score there is a legal finding."""
+    def test_the_five_gap_items_are_flagged(self) -> None:
+        """The gap-flagging items ⭐ — a low score there is a finding about Brazilian law.
+
+        Phase 4 shipped three, all finance. Phase 5 adds the two capital-markets ones: the
+        Arts. 25-28 gap (no CVM instrument requires publishing anything AIA-shaped) and the
+        Art. 5, I gap (nothing requires telling an investor a recommendation was machine-made).
+        Health has **none**, and that is the right answer rather than an omission — CFM Res.
+        2.454/2026 fills the AI-rights space almost point for point, but it is
+        :data:`ITEM_NOT_YET_IN_FORCE` until 26 Aug 2026.
+        """
         assert set(GAP_ITEM_IDS) == {
             "human_review_gap_lgpd20",
             "pix_fraud_blocking_no_analogue",
             "ai_interaction_disclosure_gap",
+            "algo_impact_public_disclosure_gap_cvm",
+            "ai_recommendation_disclosure_gap_cvm",
         }
         for item in ALL_AIA_ITEMS:
             assert item.is_gap == (item.status == ITEM_GAP), item.id
+        assert not [item.id for item in HEALTH_ITEMS if item.is_gap]
+
+    def test_the_art_5_i_right_is_mapped_three_different_ways(self) -> None:
+        """The paper's headline right, and the three-sector picture is the finding.
+
+        Art. 5, I is a **gap** in banking (CDC Art. 6, III covers the product, not the channel),
+        an **adopted but not-yet-effective** duty in health (CFM Res. 2.454/2026 Art. 5 §1, in
+        force 26 Aug 2026), and a **gap** in capital markets. Pinned so a later edit cannot
+        flatten the three into one story.
+        """
+        by_id = {item.id: item for item in ALL_AIA_ITEMS}
+        assert by_id["ai_interaction_disclosure_gap"].status == ITEM_GAP
+        assert by_id["patient_ai_disclosure"].status == ITEM_NOT_YET_IN_FORCE
+        assert by_id["ai_recommendation_disclosure_gap_cvm"].status == ITEM_GAP
+        for item_id in (
+            "ai_interaction_disclosure_gap",
+            "patient_ai_disclosure",
+            "ai_recommendation_disclosure_gap_cvm",
+        ):
+            assert by_id[item_id].article.startswith("Art. 5, I"), item_id
 
 
 class TestLegalVerificationGate:
@@ -260,6 +298,120 @@ class TestLegalVerificationGate:
         for item in ALL_AIA_ITEMS:
             assert "3.648" not in item.instrument, item.id
 
+    def test_the_unconsulted_anvisa_draft_is_cited_nowhere(self) -> None:
+        """doc 12's "draft revision of RDC 657" was DROPPED by the Phase 5 verification gate.
+
+        Three independent searches found **no consulta pública**: the process is still at the
+        pre-consultation Regulatory Impact Assessment stage, the only sourcing is an industry
+        association, and there is no instrument, no CP number and no draft text. An item resting
+        on it would be a claim about a rule that does not exist, so the whole module is swept for
+        the two category names the draft would have created.
+        """
+        from vigilai.tasks.aia_checklist import checklist as checklist_module
+
+        source = Path(str(checklist_module.__file__)).read_text(encoding="utf-8")
+        for phrase in ("software adaptável", "software específico"):
+            assert phrase not in source, phrase
+        for item in ALL_AIA_ITEMS:
+            assert "adaptável" not in item.instrument, item.id
+
+
+class TestRegulatoryCharacterLabels:
+    """Phase 5's two manual checks, as tests.
+
+    The outline asks a human to "confirm the CFM-sourced items are labelled not-yet-effective and
+    scoped to physicians rather than products", that the non-binding and self-regulatory items say
+    so, and that "no item asserts a CVM Arts. 25-28 duty or an Art. 5, III capital-markets duty".
+    All of that is mechanical once the regulatory character is **data** rather than prose, which
+    is why :data:`ITEM_STATUSES` carries it.
+    """
+
+    CFM_ITEMS = (
+        "clinician_human_oversight_override",
+        "patient_ai_disclosure",
+        "algorithmic_bias_monitoring_health",
+        "contestability_second_opinion_health",
+        "health_aia_public_conclusions_disclosure",
+    )
+
+    def test_every_cfm_item_is_labelled_adopted_but_not_yet_in_force(self) -> None:
+        by_id = {item.id: item for item in ALL_AIA_ITEMS}
+        for item_id in self.CFM_ITEMS:
+            item = by_id[item_id]
+            assert item.status == ITEM_NOT_YET_IN_FORCE, item_id
+            assert "26 Aug 2026" in item.instrument, item_id
+            assert "adopted 11 Feb 2026" in item.instrument, item_id
+
+    def test_every_cfm_item_is_scoped_to_physicians_not_products(self) -> None:
+        """CFM Res. 2.454/2026 Art. 15 gives enforcement to the CRM and Art. 8 makes the
+        consequence ethical sanctions on the *médico*. **ANVISA is never mentioned in it.**"""
+        by_id = {item.id: item for item in ALL_AIA_ITEMS}
+        for item_id in self.CFM_ITEMS:
+            instrument = by_id[item_id].instrument
+            assert "binds physicians" in instrument, item_id
+            assert "not products" in instrument, item_id
+            assert "ANVISA" not in instrument, item_id
+
+    def test_only_cfm_items_carry_the_not_yet_in_force_status(self) -> None:
+        by_id = {item.id: item for item in ALL_AIA_ITEMS}
+        not_yet = {i.id for i in ALL_AIA_ITEMS if i.status == ITEM_NOT_YET_IN_FORCE}
+        assert not_yet == set(self.CFM_ITEMS)
+        for item_id in sorted(not_yet):
+            assert by_id[item_id].instrument.startswith("CFM Res. 2.454/2026"), item_id
+
+    def test_the_non_binding_guide_says_it_is_non_binding(self) -> None:
+        by_id = {item.id: item for item in ALL_AIA_ITEMS}
+        item = by_id["cybersecurity_lifecycle_management"]
+        assert item.status == ITEM_NON_BINDING
+        assert "NON-BINDING" in item.instrument
+        # The reason, verbatim from Guia 38/2020's own text.
+        assert "caráter recomendatório e não vinculante" in item.instrument
+        assert "expected practice" in item.article
+
+    def test_the_anbima_guide_is_labelled_advisory_not_merely_self_regulatory(self) -> None:
+        """"Self-regulatory" alone would overstate it: a *Guia Orientativo* has **no adherence
+        and no enforcement mechanism at all**, unlike ANBIMA's binding Códigos."""
+        by_id = {item.id: item for item in ALL_AIA_ITEMS}
+        item = by_id["ai_vendor_procurement_diligence_selfreg"]
+        assert item.status == ITEM_SELF_REGULATORY
+        assert "Guia Orientativo" in item.instrument
+        assert "no adherence or enforcement mechanism" in item.instrument
+        assert "advisory only" in item.article
+
+    def test_no_capital_item_asserts_an_arts_25_28_cvm_duty(self) -> None:
+        """CVM has **no** Arts. 25-28 analogue; the only item filed there is the gap item.
+
+        A full-text search of Res. CVM 175's 399 consolidated pages returned zero hits for
+        "inteligência", "algoritmo" and "automatizado". Anything else claiming a hard Arts. 25-28
+        duty in this sector would be a stretch, so the ones that touch it must say how weak they
+        are in the article field itself.
+        """
+        hedges = ("GAP", "weak", "soft", "self-regulatory", "de facto analogue")
+        for item in CAPITAL_ITEMS:
+            if "Arts. 25-28" not in item.article:
+                continue
+            assert any(h in item.article for h in hedges), item.id
+        gaps = [i.id for i in CAPITAL_ITEMS if i.is_gap and "Arts. 25-28" in i.article]
+        assert gaps == ["algo_impact_public_disclosure_gap_cvm"]
+
+    def test_no_capital_item_asserts_an_art_5_iii_duty(self) -> None:
+        """Res. CVM 30 Art. 3, I-III *requires* differentiation by objectives, financial
+        situation and risk knowledge — differential treatment by profile is the statutory purpose
+        of suitability. An anti-discrimination item scored against it would penalise compliant
+        behaviour as bias, so no capital item may cite Art. 5, III except to disclaim it."""
+        for item in CAPITAL_ITEMS:
+            claims = item.article.replace("NOT an Art. 5, III item", "")
+            assert "Art. 5, III" not in claims, item.id
+        suitability = {i.id: i for i in CAPITAL_ITEMS}["suitability_profile_match"]
+        assert "NOT an Art. 5, III item" in suitability.article
+
+    def test_only_health_carries_the_art_5_iii_sector_item(self) -> None:
+        by_sector: dict[str, list[str]] = {}
+        for item in ALL_AIA_ITEMS:
+            if item.sector and item.article.startswith("Art. 5, III"):
+                by_sector.setdefault(item.sector, []).append(item.id)
+        assert by_sector == {SECTOR_HEALTH: ["algorithmic_bias_monitoring_health"]}
+
 
 class TestPromptBuiltFromChecklist:
     """The **guided** prompt is generated from the externalized checklist (single source of
@@ -293,10 +445,15 @@ class TestPromptBuiltFromChecklist:
 
     @pytest.mark.parametrize("prompt_mode", PROMPT_MODES)
     def test_sample_metadata_records_expected_items(self, prompt_mode: str) -> None:
-        """The scored item set does not depend on the frame — only the prompt does."""
+        """The scored item set does not depend on the frame — only the prompt does.
+
+        Since Resolution 10 the set is the **scenario's**, not the whole sector's:
+        ``items_for_scenario`` rather than ``items_for_sector``.
+        """
+        by_id = {s.id: s for s in AIA_SCENARIOS}
         for sample in aia_checklist_dataset(prompt_mode=prompt_mode):
             metadata = sample.metadata or {}
-            expected = [item.id for item in items_for_sector(metadata["sector"])]
+            expected = [item.id for item in items_for_scenario(by_id[str(sample.id)])]
             assert metadata["expected_items"] == expected
 
     def test_sample_metadata_records_sector_and_split_and_provenance(self) -> None:
@@ -313,11 +470,12 @@ class TestPromptBuiltFromChecklist:
 
 
 class TestSectorDataset:
-    """Four finance deployer samples, interleaved by sector, with one held-out variant."""
+    """Twelve deployer samples — four per sector, interleaved, one held-out variant each."""
 
-    def test_finance_ships_four_samples(self) -> None:
-        assert len(list(aia_checklist_dataset())) == 4
-        assert len(list(aia_checklist_dataset(SECTOR_FINANCE))) == 4
+    def test_twelve_samples_four_per_sector(self) -> None:
+        assert len(list(aia_checklist_dataset())) == 12
+        for sector in SECTORS:
+            assert len(list(aia_checklist_dataset(sector))) == 4, sector
 
     def test_scenario_ids_are_unique(self) -> None:
         ids = [s.id for s in AIA_SCENARIOS]
@@ -343,7 +501,7 @@ class TestSectorDataset:
         train = list(aia_checklist_dataset(split=SPLIT_TRAIN))
         held = list(aia_checklist_dataset(split=SPLIT_HELD_OUT))
         assert len(train) + len(held) == len(every)
-        assert len(held) == 1
+        assert len(held) == 3
         assert {str(s.id) for s in train} | {str(s.id) for s in held} == {
             str(s.id) for s in every
         }
@@ -352,10 +510,20 @@ class TestSectorDataset:
         with pytest.raises(ValueError, match="unknown split"):
             aia_checklist_dataset(split="validation")
 
-    def test_a_sector_without_scenarios_raises_rather_than_yielding_nothing(self) -> None:
-        """A 0-sample run that reports nothing is the worse failure (Resolution 2's reasoning)."""
-        with pytest.raises(ValueError, match="no deployer scenarios yet"):
-            aia_checklist_dataset(SECTOR_HEALTH)
+    def test_a_sector_without_scenarios_raises_rather_than_yielding_nothing(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 0-sample run that reports nothing is the worse failure (Resolution 2's reasoning).
+
+        Every sector has scenarios since Phase 5, so the guard is now unreachable from the
+        shipped data. It is exercised against a stubbed scenario list rather than deleted,
+        because the failure it prevents — ``--task-arg sector=<x>`` quietly evaluating nothing
+        and still printing a per-sector row — is silent.
+        """
+        remaining = [s for s in AIA_SCENARIOS if s.sector != SECTOR_HEALTH]
+        monkeypatch.setattr(scenario_module, "AIA_SCENARIOS", remaining)
+        with pytest.raises(ValueError, match="no deployer scenarios"):
+            aia_scenarios(SECTOR_HEALTH)
 
     def test_the_pilot_scenario_is_marked_as_such(self) -> None:
         """The iteration-1 situation stays distinguishable from the iteration-2 variants."""
@@ -398,44 +566,238 @@ class TestScenarioLeakageGuard:
             assert hits == [], f"{scenario.id} leaks {hits}"
 
 
+class TestPerScenarioExpectedItems:
+    """Resolution 10: no sample is scored against an item its scenario cannot raise.
+
+    Phase 4 scored every sample on **all** of its sector's items regardless of what the deployment
+    described. Five of the eighteen finance items were topical on exactly one of the four
+    scenarios, so a well-informed answer to the credit-scoring prompt measured 0.6667 and the
+    attainable ceiling was ~0.61-0.78 rather than 1.0 — an unstated ceiling that makes every
+    published figure uninterpretable. The guided frame hid it by naming every item in every
+    prompt; the unguided frame exposed it.
+
+    The fix is data: each scenario declares, per sector item it is scored on, either a **verbatim
+    span** of its own deployment prose or :data:`FRAME_LICENCE`. That is the Phase 3 rubric licence
+    audit's shape, and it brings the same **parity rule** — the frame-licensed set must be
+    identical across a sector's scenarios, so a dataset expansion cannot quietly make one variant
+    easier than its siblings.
+    """
+
+    def test_every_licence_span_occurs_verbatim_in_its_deployment(self) -> None:
+        """A span that does not appear is a claim about text that is not there."""
+        for scenario in AIA_SCENARIOS:
+            for item_id, licence in scenario.raises:
+                if licence == FRAME_LICENCE:
+                    continue
+                assert licence in scenario.deployment, f"{scenario.id}/{item_id}: {licence!r}"
+
+    def test_every_raised_item_is_a_real_item_of_that_scenarios_sector(self) -> None:
+        by_sector = {
+            sector: {item.id for item in SECTOR_ITEMS[sector]} for sector in SECTORS
+        }
+        for scenario in AIA_SCENARIOS:
+            for item_id in scenario.raised_item_ids:
+                assert item_id in by_sector[scenario.sector], f"{scenario.id}: {item_id}"
+
+    def test_no_item_is_raised_twice_by_one_scenario(self) -> None:
+        for scenario in AIA_SCENARIOS:
+            ids = list(scenario.raised_item_ids)
+            assert len(ids) == len(set(ids)), scenario.id
+
+    def test_the_frame_licensed_set_is_identical_across_a_sector(self) -> None:
+        """The anti-confound guard, lifted from the Phase 3 licence audit.
+
+        A scenario that frame-licensed an item its siblings had to earn from their own prose would
+        silently make the benchmark easier for that one sample and confound the sector comparison.
+        """
+        expected = {
+            SECTOR_FINANCE: {
+                "ouvidoria_channel",
+                "cybersecurity_cloud_vendor_accountability",
+                "integrated_risk_management_framework",
+            },
+            # Health has none: the overlay splits into ANVISA device duties, CFM physician duties
+            # and ANS plan duties, and the prior-authorisation scenario shares no sector item with
+            # the three clinical ones. The parity rule forces the empty set, and that is a finding.
+            SECTOR_HEALTH: set(),
+            SECTOR_CAPITAL: {"intermediary_infosec_cyber_policy"},
+        }
+        for sector in SECTORS:
+            in_sector = [s for s in AIA_SCENARIOS if s.sector == sector]
+            sets = {s.id: set(s.frame_licensed_ids) for s in in_sector}
+            assert len(set(map(frozenset, sets.values()))) == 1, (sector, sets)
+            assert next(iter(sets.values())) == expected[sector], sector
+
+    def test_every_sector_item_is_raised_by_at_least_one_scenario(self) -> None:
+        """An item no scenario can raise is scored nowhere — dead weight in the checklist."""
+        for sector in SECTORS:
+            raised = {
+                item_id
+                for s in AIA_SCENARIOS
+                if s.sector == sector
+                for item_id in s.raised_item_ids
+            }
+            assert {item.id for item in SECTOR_ITEMS[sector]} == raised, sector
+
+    def test_the_cross_sector_six_are_scored_in_every_sample(self) -> None:
+        """They are frame-licensed by construction: both prompts cite Arts. 25-28 by number."""
+        cross = [item.id for item in AIA_CHECKLIST]
+        for scenario in AIA_SCENARIOS:
+            scored = [item.id for item in items_for_scenario(scenario)]
+            assert scored[: len(cross)] == cross, scenario.id
+            for item_id in cross:
+                assert item_id not in scenario.raised_item_ids, scenario.id
+
+    def test_the_denominator_narrowed_and_the_amount_is_pinned(self) -> None:
+        """The number Resolution 10 exists to change, stated rather than implied."""
+        sizes = {s.id: len(items_for_scenario(s)) for s in AIA_SCENARIOS}
+        assert sizes == {
+            "finance_credit_scoring": 13,
+            "finance_pix_fraud_blocking": 13,
+            "finance_service_assistant": 11,
+            "finance_open_finance_offers": 14,
+            "health_diagnostic_imaging": 15,
+            "health_adaptive_monitoring": 14,
+            "health_plan_prior_authorization": 8,
+            "health_telemedicine_intake": 14,
+            "capital_robo_advisor": 13,
+            "capital_advisor_recommendation_engine": 13,
+            "capital_broker_execution_model": 10,
+            "capital_fund_vendor_model": 14,
+        }
+        # Strictly narrower than the sector set for every scenario — otherwise the phase changed
+        # nothing.
+        for scenario in AIA_SCENARIOS:
+            assert sizes[scenario.id] < len(items_for_sector(scenario.sector)), scenario.id
+
+    @pytest.mark.parametrize("prompt_mode", PROMPT_MODES)
+    def test_both_conditions_take_the_same_denominator(self, prompt_mode: str) -> None:
+        """Resolution 9 constraint (d): the delta must stay a property of the frame."""
+        by_id = {s.id: s for s in AIA_SCENARIOS}
+        for sample in aia_checklist_dataset(prompt_mode=prompt_mode):
+            scenario = by_id[str(sample.id)]
+            assert (sample.metadata or {})["expected_items"] == [
+                item.id for item in items_for_scenario(scenario)
+            ]
+
+    def test_the_guided_topic_list_stays_the_whole_sector_overlay(self) -> None:
+        """Deliberate, and the reason the Phase 4 prompt digests still hold.
+
+        Narrowing the *topic list* to the scored set would have rewritten all four finance guided
+        prompts. The scored set narrows; the frozen frame does not. Extra bullets cannot inflate
+        the score — items outside ``expected_items`` are simply not in the denominator.
+        """
+        for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED):
+            sector = (sample.metadata or {})["sector"]
+            for item in items_for_sector(sector):
+                assert item.description in str(sample.input), f"{sample.id}: {item.id}"
+
+    def test_the_scorer_uses_the_narrowed_set_through_the_real_pipeline(self) -> None:
+        """Read off a real run, not off the dataset: the denominator is what the scorer used."""
+        log = inspect_eval(aia_checklist(), model="mockllm/model", display="none", log_samples=True)[
+            0
+        ]
+        assert log.samples is not None
+        sizes = {}
+        for sample in log.samples:
+            score = sample.scores["aia_checklist_scorer"]  # type: ignore[index]
+            assert score.metadata is not None
+            sizes[str(sample.id)] = score.metadata["num_required"]
+        assert sizes == {s.id: len(items_for_scenario(s)) for s in AIA_SCENARIOS}
+
+
 class TestPromptEchoFloor:
     """The floor a model reaches by restating the prompt — measured per condition, not hidden.
 
     **The number that made Resolution 9 necessary.** The guided frame renders each item's
     ``description``, and a description cannot state its obligation without using the obligation's
-    vocabulary — so the rendered prompt, scored against its own scorer, covers **17 of 18**
-    finance items (0.9444). Under that frame the task measures whether a model can restate a list
-    it was just handed, and iteration 1's 0.983 is essentially that floor.
+    vocabulary — so the rendered prompt, scored against its own scorer, covered **17 of 18**
+    finance items (0.9444) in Phase 4. Under that frame the task measures whether a model can
+    restate a list it was just handed, and iteration 1's 0.983 is essentially that floor.
 
     The unguided frame states the legal basis and asks what it requires. Its floor is **0.0000**:
     nothing in the role, the deployment, the PL 2338 citation or the sector-regime phrase matches
-    any cue in any item.
+    any cue in any item — and that survived Phase 5's two new sectors unchanged, which is the
+    single most important thing the new regime phrases and deployments had to not break.
 
-    Both are pinned. The guided assertion is the regression guard — a future prompt edit that
-    reintroduces the leak fails here — and the unguided assertion is stated twice, once as an
-    exact pin and once against a **declared threshold**, so the pin can be updated by a
+    **Phase 5 sharpened the guided figure and made it worse.** Resolution 10 narrowed the
+    denominator to the items each scenario can raise, so the guided floor is now the fraction of
+    the *scenario's own* set that its prompt restates. In the two new sectors that is **exactly
+    1.0000 on all eight samples**: the guided prompt is a complete answer key there. Only finance
+    dips below, and only because of ``human_review_gap_lgpd20``, whose cue set demands *human*
+    review that even its own description does not use. Read plainly: **under the guided frame a
+    health or capital-markets score of 1.0 is the floor, not a result.**
+
+    Both floors are pinned per sample. The guided assertions are the regression guard — a future
+    prompt edit that changes the frame fails here — and the unguided one is stated twice, once as
+    an exact zero and once against a **declared threshold**, so the pin can be updated by a
     deliberate edit without quietly crossing the line that makes the condition meaningless.
     """
 
-    #: The unguided floor must stay below this. Chosen as one-item-out-of-eighteen-and-a-bit:
-    #: a single accidental cue match in the finance frame is 0.0556, so 0.05 fails on the first
-    #: leak rather than tolerating one.
+    #: The unguided floor must stay below this. Chosen as smaller than one item out of the
+    #: smallest scenario set (1/8 = 0.125 on ``health_plan_prior_authorization``), so a single
+    #: accidental cue match fails the test rather than being tolerated.
     UNGUIDED_FLOOR_THRESHOLD = 0.05
 
-    def test_the_guided_echo_floor_is_pinned_at_17_of_18(self) -> None:
-        """0.9444. If this fails, someone changed the guided frame — that frame is frozen."""
+    #: The guided echo floor per scenario, measured against the Resolution 10 denominator.
+    #: ``(covered, expected)``.
+    GUIDED_FLOOR = {
+        "finance_credit_scoring": (12, 13),
+        "finance_pix_fraud_blocking": (12, 13),
+        "finance_service_assistant": (10, 11),
+        "finance_open_finance_offers": (13, 14),
+        "health_diagnostic_imaging": (15, 15),
+        "health_adaptive_monitoring": (14, 14),
+        "health_plan_prior_authorization": (8, 8),
+        "health_telemedicine_intake": (14, 14),
+        "capital_robo_advisor": (13, 13),
+        "capital_advisor_recommendation_engine": (13, 13),
+        "capital_broker_execution_model": (10, 10),
+        "capital_fund_vendor_model": (14, 14),
+    }
+
+    @staticmethod
+    def _scored_items(sample: Sample) -> list[AIAItem]:
+        """The sample's own denominator, read from its metadata exactly as the scorer does."""
+        wanted = set((sample.metadata or {})["expected_items"])
+        return [item for item in ALL_AIA_ITEMS if item.id in wanted]
+
+    def test_the_guided_echo_floor_is_pinned_per_scenario(self) -> None:
+        """If this fails, someone changed the guided frame or a scenario's item set."""
         for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED):
-            items = items_for_sector((sample.metadata or {})["sector"])
-            covered = detect_items(str(sample.input), items)
-            missed = [item_id for item_id, ok in covered.items() if not ok]
-            assert missed == ["human_review_gap_lgpd20"], sample.id
-            assert score_checklist(str(sample.input), items) == pytest.approx(17 / 18)
-            assert score_checklist(str(sample.input), items) == pytest.approx(0.9444, abs=1e-4)
+            items = self._scored_items(sample)
+            covered, expected = self.GUIDED_FLOOR[str(sample.id)]
+            assert len(items) == expected, sample.id
+            hits = [k for k, ok in detect_items(str(sample.input), items).items() if ok]
+            assert len(hits) == covered, f"{sample.id}: {sorted(set(k for k in hits))}"
+            assert score_checklist(str(sample.input), items) == pytest.approx(
+                covered / expected
+            )
+
+    def test_the_only_item_the_guided_frame_misses_is_the_human_review_gap(self) -> None:
+        """And it misses it for a stated reason, not by accident.
+
+        ``human_review_gap_lgpd20``'s cues demand *human* review; its own description says
+        "Revisão por um ser humano" in prose the cue set does not match. It is a finance item, so
+        the eight health and capital samples have nothing to miss — which is why their guided
+        floor is exactly 1.0.
+        """
+        for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED):
+            items = self._scored_items(sample)
+            missed = [k for k, ok in detect_items(str(sample.input), items).items() if not ok]
+            assert missed in ([], ["human_review_gap_lgpd20"]), (sample.id, missed)
+
+    def test_the_guided_frame_is_a_complete_answer_key_in_the_two_new_sectors(self) -> None:
+        """Stated as its own assertion because it is a finding, not a detail."""
+        for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED):
+            if (sample.metadata or {})["sector"] == SECTOR_FINANCE:
+                continue
+            assert score_checklist(str(sample.input), self._scored_items(sample)) == 1.0
 
     def test_the_unguided_echo_floor_is_zero(self) -> None:
-        """The headline condition's prompt credits **no** item. Exact pin."""
+        """The headline condition's prompt credits **no** item, in any of the three sectors."""
         for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_UNGUIDED):
-            items = items_for_sector((sample.metadata or {})["sector"])
+            items = self._scored_items(sample)
             covered = detect_items(str(sample.input), items)
             hits = [item_id for item_id, ok in covered.items() if ok]
             assert hits == [], f"{sample.id}: unguided prompt leaks {hits}"
@@ -443,7 +805,7 @@ class TestPromptEchoFloor:
 
     def test_the_unguided_floor_is_below_the_declared_threshold(self) -> None:
         for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_UNGUIDED):
-            items = items_for_sector((sample.metadata or {})["sector"])
+            items = self._scored_items(sample)
             assert score_checklist(str(sample.input), items) < self.UNGUIDED_FLOOR_THRESHOLD
 
     def test_the_unguided_prompt_leaks_nothing_against_any_sector_item(self) -> None:
@@ -458,22 +820,27 @@ class TestPromptEchoFloor:
             assert hits == [], f"{sample.id}: leaks {hits}"
 
     def test_the_two_floors_differ_by_the_whole_topic_list(self) -> None:
-        """The reportable quantity: how much of a score is restatement rather than knowledge."""
+        """The reportable quantity: how much of a score is restatement rather than knowledge.
+
+        The unguided floor is zero everywhere, so the delta **is** the guided floor — between
+        0.9091 and 1.0000 depending on the scenario. Asserted as the identity rather than as a
+        single constant, because Resolution 10 made the denominator per-scenario.
+        """
         guided = {
-            str(s.id): score_checklist(
-                str(s.input), items_for_sector((s.metadata or {})["sector"])
-            )
+            str(s.id): score_checklist(str(s.input), self._scored_items(s))
             for s in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED)
         }
         unguided = {
-            str(s.id): score_checklist(
-                str(s.input), items_for_sector((s.metadata or {})["sector"])
-            )
+            str(s.id): score_checklist(str(s.input), self._scored_items(s))
             for s in aia_checklist_dataset(prompt_mode=PROMPT_MODE_UNGUIDED)
         }
         assert set(guided) == set(unguided)
         for sample_id, guided_floor in guided.items():
-            assert guided_floor - unguided[sample_id] == pytest.approx(17 / 18)
+            covered, expected = self.GUIDED_FLOOR[sample_id]
+            assert unguided[sample_id] == 0.0, sample_id
+            assert guided_floor - unguided[sample_id] == pytest.approx(covered / expected)
+        assert min(guided.values()) == pytest.approx(10 / 11, abs=1e-4)
+        assert max(guided.values()) == 1.0
 
     def test_the_regime_phrases_are_a_legal_basis_not_a_topic_list(self) -> None:
         """Each ``SECTOR_REGIME_PT`` phrase, scored alone, must credit zero items.
@@ -543,11 +910,27 @@ class TestPromptModes:
     }
 
     def test_the_guided_prompts_are_byte_identical_to_the_phase_4_run(self) -> None:
+        """Only the four finance scenarios existed when the Phase 4 log was written.
+
+        Phase 5's eight scenarios have no pre-existing log to be identical to, so the dict is
+        deliberately restricted to the four that do and the test asserts the restriction rather
+        than silently skipping. It is also why ``aia_checklist_dataset`` still hands the guided
+        frame ``items_for_sector`` and not the narrowed Resolution 10 set: narrowing the *topic
+        list* would have changed all four of these digests.
+        """
         import hashlib
 
+        assert set(self.GUIDED_PROMPT_SHA256) == {
+            s.id for s in AIA_SCENARIOS if s.sector == SECTOR_FINANCE
+        }
+        seen = set()
         for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED):
+            if str(sample.id) not in self.GUIDED_PROMPT_SHA256:
+                continue
             digest = hashlib.sha256(str(sample.input).encode("utf-8")).hexdigest()[:16]
             assert digest == self.GUIDED_PROMPT_SHA256[str(sample.id)], str(sample.id)
+            seen.add(str(sample.id))
+        assert seen == set(self.GUIDED_PROMPT_SHA256)
 
     def test_the_guided_frame_text_is_unchanged(self) -> None:
         """The drift guard on the frozen frame — its whole value is that it has not moved.
@@ -611,7 +994,7 @@ class TestPromptModes:
         log = logs[0]
         assert log.status == "success"
         assert log.results is not None
-        assert log.results.total_samples == 4
+        assert log.results.total_samples == 12
 
 
 class TestPureScorer:
@@ -686,11 +1069,20 @@ class TestSectorReferenceAnswers:
             assert score_checklist(answer, items) == 1.0
 
     def test_the_gap_items_are_answerable(self) -> None:
-        """They test *voluntary excess*, so a compliant-plus answer must be able to reach them."""
-        answer = SECTOR_REFERENCE_ANSWERS[SECTOR_FINANCE]
-        covered = detect_items(answer, items_for_sector(SECTOR_FINANCE))
-        for item_id in GAP_ITEM_IDS:
-            assert covered[item_id] is True, item_id
+        """They test *voluntary excess*, so a compliant-plus answer must be able to reach them.
+
+        Checked per sector, because a gap item only exists inside its own overlay: three in
+        finance, two in capital markets, none in health.
+        """
+        reached: set[str] = set()
+        for sector, answer in SECTOR_REFERENCE_ANSWERS.items():
+            items = items_for_sector(sector)
+            covered = detect_items(answer, items)
+            for item in items:
+                if item.is_gap:
+                    assert covered[item.id] is True, f"{sector}: {item.id}"
+                    reached.add(item.id)
+        assert reached == set(GAP_ITEM_IDS)
 
     def test_reference_answers_never_reach_a_prompt(self) -> None:
         for prompt_mode in PROMPT_MODES:
@@ -926,7 +1318,7 @@ class TestScorerThroughPipeline:
         log = logs[0]
         assert log.status == "success"
         assert log.results is not None
-        assert log.results.total_samples == 4
+        assert log.results.total_samples == 12
 
     def test_a_sample_without_a_sector_makes_grouped_raise(self) -> None:
         """The documented consequence of declaring ``grouped()``, pinned so it cannot surprise.
@@ -1006,7 +1398,11 @@ class TestPerSampleItemResolution:
         assert score.metadata is not None
         assert set(score.metadata["item_articles"]) == set(finance_ids)
         assert set(score.metadata["item_status"]) == set(finance_ids)
-        assert set(score.metadata["gap_items"]) == set(GAP_ITEM_IDS)
+        # Only this sample's own gap items — three of the five, all finance.
+        assert set(score.metadata["gap_items"]) == {
+            item.id for item in items_for_sector(SECTOR_FINANCE) if item.is_gap
+        }
+        assert set(score.metadata["gap_items"]) < set(GAP_ITEM_IDS)
 
 
 class TestGroupedMetricKeys:
@@ -1036,7 +1432,19 @@ class TestGroupedMetricKeys:
     def test_the_real_log_keys_are_mean_and_stderr_per_sector(self, prompt_mode: str) -> None:
         """The report contract is unchanged by the prompt condition (Resolution 9)."""
         keys = self._metric_keys(prompt_mode)
-        assert set(keys) == {"mean", "stderr", "mean_finance_bacen", "stderr_finance_bacen"}
+        assert set(keys) == {"mean", "stderr"} | {
+            f"{prefix}_{sector}" for prefix in ("mean", "stderr") for sector in SECTORS
+        }
+        assert set(keys) == {
+            "mean",
+            "stderr",
+            "mean_finance_bacen",
+            "stderr_finance_bacen",
+            "mean_health_anvisa",
+            "stderr_health_anvisa",
+            "mean_capital_cvm",
+            "stderr_capital_cvm",
+        }
 
     def test_the_headline_metric_survives_the_grouped_ones(self) -> None:
         """``_METRIC_PREFERENCE = ("accuracy", "mean")`` must still resolve."""

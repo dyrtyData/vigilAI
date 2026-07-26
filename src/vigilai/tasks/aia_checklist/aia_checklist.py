@@ -93,6 +93,8 @@ from vigilai.tasks.aia_checklist.scenario import AIA_SCENARIOS
 from vigilai.tasks.aia_checklist.scenario import aia_scenarios
 from vigilai.tasks.aia_checklist.scenario import AIADeployerScenario
 from vigilai.tasks.aia_checklist.scenario import DEPLOYER_PROVENANCE_PREFIX
+from vigilai.tasks.aia_checklist.scenario import FRAME_LICENCE
+from vigilai.tasks.aia_checklist.scenario import items_for_scenario
 from vigilai.tasks.aia_checklist.scenario import PILOT_PROVENANCE
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_GUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_UNGUIDED
@@ -211,18 +213,31 @@ def aia_checklist_dataset(
     resolve_prompt_mode(prompt_mode)
     samples: list[Sample] = []
     for scenario in aia_scenarios(sector, split):
-        items = items_for_sector(scenario.sector)
+        # Two different item sets, and the difference is Resolution 10.
+        #   ``rendered`` — the whole sector overlay. This is the **guided** frame's topic list,
+        #     and it is deliberately NOT narrowed: keeping it makes the four finance guided
+        #     prompts byte-identical to the Phase 4 `.eval` log, which is the property
+        #     ``test_the_guided_prompts_are_byte_identical_to_the_phase_4_run`` exists to pin.
+        #     The unguided frame ignores it entirely.
+        #   ``scored`` — the six cross-sector items plus the sector items **this deployment can
+        #     actually raise**. Phase 4 scored every sample on all 18 finance items regardless of
+        #     what it described, which put the attainable ceiling at ~0.61-0.78 instead of 1.0.
+        # Both prompt conditions take the same ``scored`` set, per Resolution 9 constraint (d) —
+        # the delta between the conditions must stay a property of the frame, never of the
+        # denominator.
+        rendered = items_for_sector(scenario.sector)
+        scored = items_for_scenario(scenario)
         samples.append(
             Sample(
-                input=_build_prompt(scenario, items, prompt_mode),
+                input=_build_prompt(scenario, rendered, prompt_mode),
                 target="cobertura completa dos itens da AIA conforme Arts. 25-28",
                 id=scenario.id,
                 metadata={
                     # Required: aia_checklist_scorer declares grouped() metrics on this key.
                     "sector": scenario.sector,
-                    "expected_items": [item.id for item in items],
-                    "item_articles": {item.id: item.article for item in items},
-                    "item_status": {item.id: item.status for item in items},
+                    "expected_items": [item.id for item in scored],
+                    "item_articles": {item.id: item.article for item in scored},
+                    "item_status": {item.id: item.status for item in scored},
                     "split": SPLIT_HELD_OUT if scenario.held_out else SPLIT_TRAIN,
                     # Which frame produced this prompt. On the sample rather than only in the
                     # task args so a Phase 7 extracted transcript, or a stray log, can never be
@@ -263,7 +278,8 @@ def aia_checklist_dataset(
     # `vigilai report` can mark them without ever reading a sample (the aggregator is
     # deliberately header-only).
     brazil_gap_items=(
-        "human_review_gap_lgpd20,pix_fraud_blocking_no_analogue,ai_interaction_disclosure_gap"
+        "human_review_gap_lgpd20,pix_fraud_blocking_no_analogue,ai_interaction_disclosure_gap,"
+        "algo_impact_public_disclosure_gap_cvm,ai_recommendation_disclosure_gap_cvm"
     ),
 )
 def aia_checklist(
@@ -311,6 +327,7 @@ __all__ = [
     "AIA_SCENARIOS",
     "AIADeployerScenario",
     "DEPLOYER_PROVENANCE_PREFIX",
+    "FRAME_LICENCE",
     "PILOT_PROVENANCE",
     "PROMPT_MODE_GUIDED",
     "PROMPT_MODE_UNGUIDED",
@@ -319,5 +336,6 @@ __all__ = [
     "aia_checklist",
     "aia_checklist_dataset",
     "aia_scenarios",
+    "items_for_scenario",
     "resolve_prompt_mode",
 ]
