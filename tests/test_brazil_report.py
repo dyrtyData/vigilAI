@@ -28,6 +28,7 @@ import dataclasses
 import json
 import math
 import statistics
+import time
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,8 @@ import pytest
 from inspect_ai import eval as inspect_eval
 from inspect_ai import Task
 from inspect_ai import task
+from inspect_ai.log import list_eval_logs
+from inspect_ai.log import read_eval_log
 from inspect_ai.dataset import MemoryDataset
 from inspect_ai.dataset import Sample
 from inspect_ai.model import get_model
@@ -1697,6 +1700,78 @@ class _StubScore:
         self.params: dict[str, Any] = {}
 
 
+class TestRerunIntoAnExistingLogDirWins:
+    """A re-run of one task into an existing log dir must be the score the report shows.
+
+    The regression guard for a bug found on 2026-07-26: ``_load_task_scores`` iterated
+    ``list_eval_logs`` and let each log overwrite the previous entry for its task, documented
+    as *"keeping the most recent score"* — but ``list_eval_logs`` defaults to
+    ``descending=True`` (newest **first**), so last-write-wins kept the **oldest** log. Landing
+    a corrected re-run of a single task in its existing scaled dir would then have changed
+    nothing in the report, silently. Recency now comes from ``EvalSpec.created`` inside the log.
+    """
+
+    @staticmethod
+    def _two_runs(tmp_path: Path, first: str, second: str) -> BrazilComplianceReport:
+        """Score one task twice into one dir — ``first`` then ``second`` — and report on it."""
+        log_dir = str(tmp_path / "rerun")
+        a_task = _binary_task(
+            "human_deception_brazil", "Disclosure of AI", "Art. 5, I", "all_ai"
+        )
+        _run_into(log_dir, a_task, first)
+        # `created` has second resolution, so force a distinct timestamp rather than racing it.
+        time.sleep(1.1)
+        _run_into(
+            log_dir,
+            _binary_task(
+                "human_deception_brazil", "Disclosure of AI", "Art. 5, I", "all_ai"
+            ),
+            second,
+        )
+        assert len(list_eval_logs(log_dir)) == 2, "expected two logs for the one task"
+        return build_brazil_report(log_dir)
+
+    def test_the_later_run_is_the_reported_score(self, tmp_path: Path) -> None:
+        """First run scores 0.0, re-run scores 1.0 → the report must show 1.0."""
+        report = self._two_runs(tmp_path, _MISS, _HIT)
+        rows = [s for s in report.brazil_task_scores if s.task == "human_deception_brazil"]
+        assert len(rows) == 1, "one task must yield one row however many logs it has"
+        assert rows[0].score == 1.0
+
+    def test_it_is_recency_and_not_a_preference_for_the_higher_score(
+        self, tmp_path: Path
+    ) -> None:
+        """The mirror case: a re-run that scores *lower* must also win."""
+        report = self._two_runs(tmp_path, _HIT, _MISS)
+        rows = [s for s in report.brazil_task_scores if s.task == "human_deception_brazil"]
+        assert len(rows) == 1
+        assert rows[0].score == 0.0
+
+    def test_list_eval_logs_really_is_newest_first(self, tmp_path: Path) -> None:
+        """Pins the Inspect behaviour the bug depended on, so a future version change shows up.
+
+        If Inspect ever flips the default to ascending, the old last-write-wins code would
+        start being accidentally right — and this test tells us why the fix is still needed.
+        """
+        log_dir = str(tmp_path / "order")
+        _run_into(
+            log_dir,
+            _binary_task("bbq_brazil", "Representation — Absence of Bias", "Art. 5, III", "all_ai"),
+            _HIT,
+        )
+        time.sleep(1.1)
+        _run_into(
+            log_dir,
+            _binary_task("bbq_brazil", "Representation — Absence of Bias", "Art. 5, III", "all_ai"),
+            _MISS,
+        )
+        created = [
+            read_eval_log(info, header_only=True).eval.created
+            for info in list_eval_logs(log_dir)
+        ]
+        assert created == sorted(created, reverse=True), created
+
+
 class TestScorerSelectionIsByName:
     """``_select_score`` never indexes the list, in either direction."""
 
@@ -2587,6 +2662,56 @@ class TestLoadSamples:
         )
         ids = [r.sample_id for r in load_samples(log_dir)]
         assert ids == [str(i) for i in range(1, 13)]  # 2 before 10, not after
+
+    def test_a_rerun_supersedes_the_earlier_log_for_the_same_task(
+        self, tmp_path: Path
+    ) -> None:
+        """The sample-level half of the 2026-07-26 recency bug.
+
+        A corrected re-run into an existing dir must be what the transcript rules see. Loading
+        both runs makes every "the lowest ``sample_id`` scoring 0" rule silently ambiguous —
+        the stale row satisfies it and the corrected one does not, so the extractor kept
+        selecting the superseded transcript.
+        """
+        log_dir = str(tmp_path / "rerun_samples")
+        for completions in (["0.0", "0.0"], ["1.0", "1.0"]):
+            _run_samples_into(
+                log_dir,
+                _multi_sample_task(
+                    "explanation_quality",
+                    "Interpretability",
+                    samples=2,
+                    article="Art. 6, I",
+                    scope="high_risk",
+                ),
+                completions,
+            )
+            time.sleep(1.1)
+        assert len(list_eval_logs(log_dir)) == 2
+
+        records = load_samples(log_dir)
+        assert len(records) == 2, "the superseded run must not contribute rows"
+        assert {r.deterministic_score for r in records} == {1.0}
+
+    def test_all_runs_opts_back_in_to_every_log(self, tmp_path: Path) -> None:
+        """The escape hatch stays available and is what it says."""
+        log_dir = str(tmp_path / "rerun_all")
+        for completions in (["0.0", "0.0"], ["1.0", "1.0"]):
+            _run_samples_into(
+                log_dir,
+                _multi_sample_task(
+                    "explanation_quality",
+                    "Interpretability",
+                    samples=2,
+                    article="Art. 6, I",
+                    scope="high_risk",
+                ),
+                completions,
+            )
+            time.sleep(1.1)
+        records = load_samples(log_dir, all_runs=True)
+        assert len(records) == 4
+        assert {r.deterministic_score for r in records} == {0.0, 1.0}
 
 
 class TestJudgeAgreementCli:

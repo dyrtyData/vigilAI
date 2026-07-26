@@ -64,6 +64,7 @@ from dataclasses import field
 from typing import Any
 
 from inspect_ai.log import EvalLog
+from inspect_ai.log import EvalLogInfo
 from inspect_ai.log import EvalSample
 from inspect_ai.log import list_eval_logs
 from inspect_ai.log import read_eval_log
@@ -485,7 +486,7 @@ def _records_from_log(log: EvalLog) -> list[SampleRecord]:
 
 
 def load_samples(
-    log_dir: str, *, tasks: Sequence[str] | None = None
+    log_dir: str, *, tasks: Sequence[str] | None = None, all_runs: bool = False
 ) -> list[SampleRecord]:
     """Read every ``.eval`` log under ``log_dir`` **with its samples**.
 
@@ -498,23 +499,51 @@ def load_samples(
             Filtering happens **after** the header is read but before samples are parsed only in
             the sense that non-matching logs are skipped entirely — a ``--tasks`` filter therefore
             also saves the read.
+        all_runs: Load **every** log for a task rather than only its most recent. Off by
+            default; see below for why.
 
     Returns:
         Every ``(task, sample, epoch)`` row, sorted by ``(task, sample id, epoch)`` with integer
-        ids ordered numerically. Two runs of the same task in one directory contribute **both**
-        their rows — unlike ``brazil_report._load_task_scores``, which keys by task name and keeps
-        the last. That difference is deliberate and is why the guided and unguided
-        ``aia_checklist`` conditions must still go to separate log dirs for *reporting*: here they
-        would both be present and distinguishable by ``prompt_mode``, but the aggregator would
-        show one unlabelled row.
+        ids ordered numerically.
+
+    **Only the most recent log per task is read, by default.** When a task has been re-run into
+    an existing directory the older log is *superseded*, and loading both makes every selection
+    rule silently ambiguous: the rules pick "the lowest-``sample_id`` sample scoring 0", and a
+    sample that scores 0 in the stale run and 1 in the corrected one satisfies that from the
+    stale row. Found on 2026-07-26, in the worst possible way — after a corrected
+    ``human_deception_brazil`` re-run, all three transcript rules still resolved against the
+    superseded log, so the extractor would have written the retracted finding into the paper's
+    evidence directory. Recency comes from ``EvalSpec.created``, matching
+    ``brazil_report._load_task_scores``.
+
+    Pass ``all_runs=True`` to get every run's rows — e.g. to compare two conditions of one task
+    that genuinely share a directory. That is not how this repo runs the guided and unguided
+    ``aia_checklist`` conditions (Resolution 9 puts them in separate ``--log-dir``s, because the
+    header-only aggregator would otherwise show one unlabelled row), so the default is the
+    safe one.
     """
     wanted = set(tasks) if tasks is not None else None
-    records: list[SampleRecord] = []
+    selected: list[EvalLogInfo] = []
+    latest: dict[str, tuple[tuple[str, str], EvalLogInfo]] = {}
     for info in list_eval_logs(log_dir):
-        if wanted is not None:
-            header = read_eval_log(info, header_only=True)
-            if _bare_task_name(header.eval.task) not in wanted:
-                continue
+        header = read_eval_log(info, header_only=True)
+        task_name = _bare_task_name(header.eval.task)
+        if wanted is not None and task_name not in wanted:
+            continue
+        if all_runs:
+            selected.append(info)
+            continue
+        # ``created`` is ISO-8601, so lexicographic order is chronological; the log path is the
+        # tie-break purely so the choice is deterministic for same-second runs.
+        key = (header.eval.created or "", str(info.name))
+        previous = latest.get(task_name)
+        if previous is None or key > previous[0]:
+            latest[task_name] = (key, info)
+    if not all_runs:
+        selected = [entry[1] for entry in latest.values()]
+
+    records: list[SampleRecord] = []
+    for info in selected:
         # ``resolve_attachments="core"`` covers the input/messages fields; scores and output are
         # never attachment-ified, so this is the whole surface the reader touches.
         log = read_eval_log(info, resolve_attachments="core")

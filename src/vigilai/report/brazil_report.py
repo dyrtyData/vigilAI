@@ -1774,16 +1774,33 @@ def _load_task_scores(log_dir: str) -> list[TaskScore]:
 
     Uses the Inspect log API (``list_eval_logs`` + ``read_eval_log(header_only=True)``); only
     the header is needed (task spec + score metrics), so this is cheap even for large runs.
-    Later logs for the same task (Inspect writes one log per task per run) overwrite earlier
-    ones, keeping the most recent score for a task.
+
+    When a directory holds **more than one log for the same task** — which is what happens when
+    a task is re-run into an existing ``--log-dir`` — the log with the **latest
+    ``EvalSpec.created``** wins, so the report shows the most recent score for that task.
+
+    **This used to be wrong, and silently.** The old code iterated ``list_eval_logs`` and let
+    each log overwrite the previous entry, documented as "keeping the most recent score". But
+    ``list_eval_logs`` defaults to ``descending=True`` — newest **first** — so last-write-wins
+    kept the *oldest* log instead. Found on 2026-07-26 while re-running a single corrected task
+    into its existing scaled log dir: the report would have gone on reporting the superseded
+    number with no warning anywhere. Recency is now taken from ``EvalSpec.created``, which
+    travels inside the log rather than depending on a listing order or on file mtimes, and the
+    listing order no longer matters at all.
     """
     infos = list_eval_logs(log_dir)
-    scores_by_task: dict[str, TaskScore] = {}
+    best: dict[str, tuple[str, str, TaskScore]] = {}
     for info in infos:
         log = read_eval_log(info, header_only=True)
         task_score = _task_score_from_log(log)
-        scores_by_task[task_score.task] = task_score
-    return list(scores_by_task.values())
+        # ``created`` is an ISO-8601 timestamp, so lexicographic order is chronological order.
+        # The log path is the tie-break, purely so the choice is deterministic when two logs
+        # for one task carry the same ``created`` (same-second runs).
+        key = (log.eval.created or "", info.name)
+        previous = best.get(task_score.task)
+        if previous is None or key > (previous[0], previous[1]):
+            best[task_score.task] = (key[0], key[1], task_score)
+    return [entry[2] for entry in best.values()]
 
 
 # ---------------------------------------------------------------------------------------

@@ -99,6 +99,15 @@ files.extend-exclude = [
     "src/vigilai/tasks/self_check_consistency/topics.py",
     "src/vigilai/tasks/self_check_consistency/compact_ie/",
     "src/vigilai/tasks/mmlu_pro_robustness/correct_to_misspelling.json",
+    # Machine-extracted transcripts: verbatim model completions, mostly in pt-BR, written by
+    # `tools/extract_examples.py` and never hand-authored (the files carry a "do not hand-edit"
+    # header and a byte-identical-regeneration test). Excluded rather than allow-listed word by
+    # word — unlike the Brazil *source* modules below, there is no authored English prose here to
+    # protect, and the Portuguese vocabulary changes with every re-run, so an `extend-words` entry
+    # would go stale the next time a model is asked the same question. First needed on 2026-07-26,
+    # when the corrected `human_deception_brazil` re-run committed the first real transcripts:
+    # 13 of them, including `conter`, `validade` and `operacional` — all correct Portuguese.
+    "report/examples/",
 ]
 
 # Portuguese words that `typos` reads as English misspellings.

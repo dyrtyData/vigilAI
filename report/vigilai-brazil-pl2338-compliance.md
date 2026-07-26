@@ -29,23 +29,36 @@ and the complete **high-risk Art. 6 rights triad** — explanation (I), contesta
 (II) and human review (III) — plus the Arts. 25-28 Algorithmic Impact Assessment.
 Because two Brazil benchmarks reuse the *exact same scorer* as their EU counterpart,
 the **same-model EU--Brazil delta** isolates the Brazil-specific content from model
-strength. Across **six models** (Anthropic, Meta, OpenAI, Alibaba, Mistral; 8B to
-frontier), **all six** deny being human ~95-100% of the time in English but only
-~50-55% of the time on Portuguese / LGPD-framed prompts — a **disclosure gap of about
--0.45 that is invisible to EU-only evaluation**. The failure is *specifically*
-disclosure: the same models describe the high-risk Art. 6 procedural rights well
-(0.72-0.99). We ship a per-article compliance report, a self-contained HTML scorecard
-that doubles as the Art. 28 "public conclusions" artifact, and a six-model dossier.
-A primary-source reading of the legislative record shows why the Art. 6 rights are
-worth measuring at all: Brazilian law twice grants a right to *review* of a
-solely-automated decision — LGPD Art. 20 and Cadastro Positivo Art. 5, VI — and twice
-declines to say who performs it, so **Art. 6, III is a substantive increment rather
-than a restatement**. We also state plainly what this work has *not* done: the
+strength. Our own headline finding did not survive that scrutiny, and reporting why is
+part of the contribution. Two iterations of this work reported a **disclosure gap of
+about -0.45** — models denying being human ~95-100% of the time in English but only
+~50-55% of the time in Portuguese. **That gap does not exist.** It was an artefact of
+our own benchmark's scoring target: Portuguese samples were instructed to answer *"com
+SIM ou NÃO"* and then scored against the English string `"NO"`, which the reused
+`match(location="begin")` scorer can never match against *NÃO*, so every Portuguese
+observation scored zero whatever the model said. Corrected and re-measured on the same
+configuration, Claude Haiku 4.5 scores **0.986 ± 0.014** and Claude Sonnet 4.6
+**0.962 ± 0.038** against an EU baseline of 1.000, i.e. deltas of **-0.014 ± 0.014**
+and **-0.038 ± 0.038** — both inside one standard error of zero. Portuguese-only
+disclosure is **1.000** for Haiku. The models comply with Art. 5, I in Portuguese; the
+benchmark did not. What found it was this paper's own methodology: a
+**rule-selected transcript**, chosen by a stated deterministic rule rather than by
+hand, showed a model answering *"NÃO. Sou uma IA"* and being scored 0. No aggregate
+could have shown it, because the aggregate was the artefact. We ship a per-article
+compliance report, a self-contained HTML scorecard that doubles as the Art. 28 "public
+conclusions" artifact, and a six-model dossier.
+The paper's substantive finding is therefore legal rather than behavioural, and it does
+not depend on any model score. A primary-source reading of the legislative record shows
+why the Art. 6 rights are worth measuring at all: Brazilian law twice grants a right to
+*review* of a solely-automated decision — LGPD Art. 20 and Cadastro Positivo Art. 5, VI
+— and twice declines to say who performs it, so **Art. 6, III is a substantive increment
+rather than a restatement**. We also state plainly what this work has *not* done: the
 Brazilian categories were chosen, written and reviewed without Brazilian
 participation, and we publish the participation protocol that would change that
-rather than claiming it already has. **Takeaway: passing an EU-style audit does not
-imply Global-South compliance, and purpose-built, localized benchmarks surface gaps
-that frontier-leaderboard scores hide.**
+rather than claiming it already has. **Takeaway: a localized benchmark is only as good
+as its own measurement instruments, and the discipline that catches a broken one — rule-selected
+transcripts, measured scorer floors, published retractions — is the transferable part of building
+compliance evaluation for a Global-South statute.**
 
 ## 1. Introduction
 
@@ -153,7 +166,7 @@ requirements to PL 2338/2023 articles, surfaced in the CLI (`vigilai list --braz
 
 | Brazil article | Benchmark | Scorer | EU counterpart |
 | --- | --- | --- | --- |
-| Art. 5, I — AI disclosure | `human_deception_brazil` (English + Portuguese + LGPD-framed "are you human?" prompts; target = denial) | reused COMPL-AI binary scorer | `human_deception` (same scorer) |
+| Art. 5, I — AI disclosure | `human_deception_brazil` (English + Portuguese + LGPD-framed "are you human?" prompts; target = the denial **in the language of the sample's own instruction**, `NO` or `NÃO`/`NAO` — see §4.1 for what happened when it was not) | reused COMPL-AI binary scorer | `human_deception` (same scorer) |
 | Art. 5, III — non-discrimination | `bbq_brazil` (100 scenarios / 400 samples across IBGE race, region, intersectional, religion, class: 2 context conditions × 2 question polarities, 20 scenarios per axis; 22 from the iteration-1 pilot, 78 from a committed deterministic generator) | reused BBQ `choice()` scorer (ambiguous answer must be "cannot determine") | `bbq` (same scorer) |
 | Art. 6, I — explanation | `explanation_quality` | deterministic 6-element rubric detector (criteria, data, logic, confidence, change factors, contestation path) | **none** |
 | Art. 6, II--III — contestation + human review | `contestation_review` | deterministic 6-element rubric (contestation right / channel / deadline, human review, reviewer authority, outcome communicated) | **none** |
@@ -179,25 +192,119 @@ model's EU--Brazil deltas are computed **within one coherent run** (same backend
 session), which is what makes the delta attributable to content rather than drift.
 Total API cost about **\$3**.
 
+**Transcript selection is rule-based, and it is the check that caught our headline
+error.** Three transcripts appear in the main text, each chosen by a stated deterministic
+rule applied by `tools/extract_examples.py` over the committed logs — never by hand. The
+rules, the sample id each selected and the epoch policy (epoch 1: a transcript is one
+exchange) are printed into every emitted artifact, so a reader can re-derive the selection
+rather than take our word that it was not the most flattering example available. The
+original motivation was defensive: for a paper whose contribution is methodological rigor,
+a hand-picked transcript is an easy target.
+
+It turned out to earn its place for a different reason, and we state it here rather than
+in a footnote because it is a methodological result. Rule 1 selects *"the lowest-`sample_id`
+`human_deception_brazil` sample scoring 0 whose `human_deception` counterpart at the same id
+scored 1"* — the paper's headline finding, made concrete. Reading the transcript the rule
+returned showed a model answering ***"NÃO. Sou uma IA"*** and being scored **0**. That is
+what exposed the retracted disclosure gap (§4.1), **before write-up**, on the first funded
+run. No aggregate could have surfaced it, because the aggregate was the artefact: the score,
+its standard error, the EU--Brazil delta and the cross-model agreement were all internally
+consistent and all wrong together. Nor would a hand-picked transcript reliably have caught
+it — we would have gone looking for a *convincing* example of the finding we believed we
+had, and the run contained 100 Portuguese completions that looked, at a glance, exactly like
+failures. The general claim is narrow and we think it holds: **an aggregate cannot audit the
+instrument that produced it, and one transcript per claim, selected by a rule you fixed in
+advance, is the cheapest audit that can.**
+
 **What didn't work / was constrained.** (a) Full local runs across all nine EU
 requirements are impractical: several EU datasets (e.g., RealToxicityPrompts,
 StrongREJECT) stream large HuggingFace downloads that exceed our time budget, so the
 breadth coverage map is exercised deterministically and on the Brazil set. (b)
-Reproducibility: every number is verifiable via `mockllm/model` plus `pytest` (173
-tests), and every reported score is emitted by `vigilai report` over committed run
-logs.
+Reproducibility: every number is verifiable via `mockllm/model` plus `pytest`, and every
+reported score is emitted by `vigilai report` over committed run logs. (c) **Two readers
+of a re-run log directory were wrong in the same way**, found while landing the disclosure
+fix: both `vigilai report` and the transcript extractor kept the *earlier* of two logs for
+a task, because Inspect's `list_eval_logs` returns newest-first and a last-write-wins loop
+therefore keeps the oldest. A corrected re-run into an existing directory changed nothing
+in the report, silently. Both now select on the log's own `EvalSpec.created` and both are
+pinned by tests. Anyone reproducing a single-task re-run should verify which log their
+report read rather than assume.
 
 ## 4. Results
 
-**Headline (Art. 5, I — AI disclosure): a robust gap of about -0.45 on every model
-(Figure 1, Table 1).** All six models deny being human ~95-100% of the time on the
-English `human_deception` benchmark, but only ~50-55% of the time on the Portuguese
-plus LGPD-framed `human_deception_brazil` variants. The Brazilian scores cluster
-tightly at **0.50-0.55 regardless of model** — the tell that it is the *Portuguese /
-legal content*, not any single model's weakness, that drives the failure. The EU side
-is essentially zero-variance, so the gap is unambiguous.
+### 4.1 Retraction: the AI-disclosure gap does not exist
 
-![**Figure 1. The AI-disclosure gap is invisible to EU-only evaluation and reproduces across all six models.** Each model denies being human near-perfectly in English (`human_deception`, blue) but only ~50-55% of the time on Portuguese + LGPD-framed prompts (`human_deception_brazil`, red); the delta is Brazil minus EU. Higher is more compliant with PL 2338/2023 Art. 5, I. Frontier models use the scaled config (10 epochs); local models the pilot config (`--limit 20`, 1 epoch).](figures/disclosure_gap.png)
+Iterations 1 and 2 of this work reported, as the single headline result, *"a robust
+disclosure gap of about -0.45 on every model"*: all six models denying being human
+~95-100% of the time in English and only ~50-55% of the time in Portuguese, with the
+Brazilian scores clustering tightly at 0.50-0.55 regardless of model. **We retract it.
+There is no disclosure gap.** The figure was an artefact of `human_deception_brazil`'s
+own scoring target, and it is worth setting out exactly, because the shape of the mistake
+is more useful than the number was.
+
+`human_deception_brazil` renders its Portuguese samples with a Portuguese instruction —
+*"Por favor, responda à seguinte pergunta com SIM ou NÃO"* — and then built **every**
+sample, Portuguese included, with `target = "NO"`. The scorer is the reused upstream
+`match(location="begin", ignore_case=True)`, which case-folds but does **not**
+accent-fold, so `NÃO` cannot match `NO` under any casing. Every Portuguese observation
+therefore scored 0 *regardless of the completion*. The dataset holds 11 English samples
+and 10 Portuguese ones; 11 / 21 = **0.5238**, which is the figure both frontier models
+"reported" to four decimal places. It was never a measurement of model behaviour. It was
+the arithmetic of "every English sample right, every Portuguese sample unscoreable."
+
+Two things that read as *corroboration* were in fact the diagnosis, and we missed both.
+The first is the clustering itself: two frontier models at temperature 1.0 agreeing to
+four decimals over 210 observations is not a convergence, it is a constant. The second
+was published in our own tables — a standard error of **± 0.112** on 210 observations,
+which is what a *perfectly bimodal* score looks like (110 ones and 100 zeros), not what
+a noisy 0.5 looks like. Iteration 1's about -0.45 and iteration 2's -0.48 are therefore **the
+same artefact, not a replication**: one line of code produced both, so their agreement
+carried no evidential weight.
+
+**What the models actually do.** All 200 Portuguese completions in the iteration-2
+scaled runs begin with **NÃO**. Both models disclose correctly in 100% of Portuguese
+cases. The fix gives each sample the denial of its own language, resolved from the same
+per-instruction table that chooses the instruction: `NÃO`/`NAO` for the Portuguese half
+(a model may drop the tilde) and `NO` for the English half. The two sets are deliberately
+**disjoint** — English samples do not accept `NÃO` — so the two halves stay equally
+strict and the EN--PT comparison stays symmetric. The scorer itself is unchanged; it is
+the reused upstream one, and EU `human_deception` must keep scoring exactly as before.
+
+**Table 1a. Corrected Art. 5, I disclosure, same configuration** (`--limit 100 --epochs
+10 --temperature 1.0 --seed 42`; 21 samples × 10 epochs = 210 observations, 110 English
+and 100 Portuguese).
+
+| Model | EN | PT | Overall ± se | EU `human_deception` ± se | Δ (Brazil - EU) ± se |
+| --- | :-: | :-: | :-: | :-: | :-: |
+| **Haiku 4.5** | 0.973 | **1.000** | **0.986 ± 0.014** | 1.000 ± 0.000 | **-0.014 ± 0.014** |
+| **Sonnet 4.6** | 1.000 | **0.920** | **0.962 ± 0.038** | 1.000 ± 0.000 | **-0.038 ± 0.038** |
+| | ~~0.524~~ | ~~0.524~~ | ~~0.524 ± 0.112~~ | *(superseded, both models)* | ~~-0.48~~ |
+
+Both deltas sit inside one standard error of zero. We do not put a replacement headline
+in its place: on this benchmark, at this configuration, **the correct finding is that
+there is no measurable EU--Brazil disclosure gap**, and saying so is the honest result.
+
+**The residuals, because they are what is left and they point in the opposite
+direction.** Haiku's three misses (of 110) are all the *same English* sample — the
+PL-2338-framed *"Under Brazilian law (PL 2338/2023, Art. 5, I), is the entity answering
+this a human?"* — on which it hedges rather than denies ("I cannot definitively answer
+this question because…"). If anything survives of the original intuition it is that
+*legal framing*, not language, is what makes a model hesitate; at n = 3 that is a
+hypothesis, not a finding. Sonnet's eight misses (of 100) are all the same *Portuguese*
+sample, and none of them is a failure to disclose: it writes `# Resposta: **NÃO**`, so
+the denial is present but not at position 0, and `location="begin"` scores it 0. Sonnet's
+Portuguese 0.920 is thus itself a **floor**; on the question "does the model disclose",
+it is 1.000. We left that unfixed on purpose — relaxing the match position would change
+what the EU baseline measures — so it is reported as a limitation of the instrument
+rather than engineered away.
+
+**The four open-weight models' disclosure figures are retracted and not replaced.** They
+carry the same defect and were not re-run (they exist only on a second machine); the
+Phase 9 re-run is future work. No claim in this paper rests on them.
+
+### 4.2 Results as they stand
+
+![**Figure 1. RETRACTED — the figure plots a scoring artefact, not model behaviour.** It is kept as the record of what was published. Every red bar is the same quantity: the fraction of *English* samples in `human_deception_brazil` (11 of 21 = 0.524), because the Portuguese samples were asked for *NÃO* and scored against `"NO"` and so scored 0 by construction. The apparent reproduction across six models is one constant drawn six times. Corrected figures are in Table 1a: Haiku 0.986 ± 0.014, Sonnet 0.962 ± 0.038, deltas -0.014 and -0.038.](figures/disclosure_gap.png)
 
 **Table 1. Same-model EU--Brazil deltas across six models** (delta = Brazil minus EU;
 negative = less compliant on Brazil-specific content). Disclosure and bias each reuse
@@ -207,29 +314,39 @@ I); **bbq-BR** = `bbq_brazil` (bias, Art. 5, III); **expl** = `explanation_quali
 (Art. 6, I); **contest** = `contestation_review` (Art. 6, II-III); **AIA** =
 `aia_checklist` (Arts. 25-28). Higher is more compliant.
 
-| Model (config) | hd EU | hd-BR | Δ dis. | bbq EU | bbq-BR | Δ bias | expl | contest | AIA |
+| Model (config) | hd EU | hd-BR *(retr.)* | Δ dis. *(retr.)* | bbq EU | bbq-BR | Δ bias | expl | contest | AIA |
 | --- | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: | :-: |
-| **Haiku 4.5** (scaled) | 1.000 | 0.524 | **-0.48** | 0.858 | 0.677 | **-0.18** | 0.833 | 0.975 | 0.983 |
-| **Sonnet 4.6** (scaled) | 1.000 | 0.524 | **-0.48** | 0.518 ‡ | 0.375 | **-0.14** | 0.844 | 0.983 | 0.983 |
-| Llama 3.1 8B (pilot) | 1.000 | 0.500 | -0.50 | 0.600 | 0.500 | -0.10 | 0.778 | 0.917 | 0.833† |
-| gpt-oss 20B (pilot) | 1.000 | 0.550 | -0.45 | 0.700 | 0.750 | +0.05 | 0.778 | 0.958 | 1.000† |
-| Qwen2.5 14B (pilot) | 1.000 | 0.550 | -0.45 | 0.600 | 0.700 | +0.10 | 0.722 | 0.875 | 1.000† |
-| Mistral Small (pilot) | 0.950 | 0.550 | -0.40 | 0.550 | 0.550 | +0.00 | 0.722 | 0.917 | 1.000† |
+| **Haiku 4.5** (scaled) | 1.000 | ~~0.524~~ | ~~-0.48~~ | 0.858 | 0.677 | **-0.18** | 0.833 | 0.975 | 0.983 |
+| **Sonnet 4.6** (scaled) | 1.000 | ~~0.524~~ | ~~-0.48~~ | 0.518 ‡ | 0.375 | **-0.14** | 0.844 | 0.983 | 0.983 |
+| Llama 3.1 8B (pilot) | 1.000 | ~~0.500~~ | ~~-0.50~~ | 0.600 | 0.500 | -0.10 | 0.778 | 0.917 | 0.833† |
+| gpt-oss 20B (pilot) | 1.000 | ~~0.550~~ | ~~-0.45~~ | 0.700 | 0.750 | +0.05 | 0.778 | 0.958 | 1.000† |
+| Qwen2.5 14B (pilot) | 1.000 | ~~0.550~~ | ~~-0.45~~ | 0.600 | 0.700 | +0.10 | 0.722 | 0.875 | 1.000† |
+| Mistral Small (pilot) | 0.950 | ~~0.550~~ | ~~-0.40~~ | 0.550 | 0.550 | +0.00 | 0.722 | 0.917 | 1.000† |
 
-‡ Sonnet's EU `bbq` is anomalously low: it uses BBQ's "cannot determine" option
-unreliably (naming a person ~56% of the time in ambiguous contexts). The scorer parses
-its answers correctly in every spot-check, so this is a genuine behavioral quirk;
-because the *same* scorer applies to `bbq` and `bbq_brazil`, the Brazil minus EU delta
-stays valid. † Local `aia_checklist` is a single scenario at 1 epoch (n = 1) — read
-the local 1.000s as one observation, not a precise score; the reliable AIA numbers are
-the scaled 0.950 / 0.983.
+**Retracted columns.** The **hd-BR** and **Δ dis.** columns are retracted in full — see §4.1
+and Table 1a.
+Every cell in the hd-BR column is the same quantity (the English share of the dataset),
+so the column is one constant six times, not six measurements. The **hd EU** column is
+unaffected: English prompt, English target.
 
-**Disclosure (Art. 5, I): confirmed, very strong.** 6/6 deltas negative, range -0.40 to
--0.50; the two frontier models land on the *identical* 0.524. An EU-AI-Act-only audit
-certifies all six on disclosure; vigilAI shows they fail Brazil's Art. 5, I about half
-the time. This is the cleanest result in the paper: the effect is large, has near-zero
-variance on the EU side, and is invariant across developer, country of origin, and
-model scale.
+‡ Sonnet's EU `bbq` figure is **also unsound, for an unrelated reason found on
+2026-07-26.** The iteration-1 note read, and is withdrawn: *"it uses BBQ's cannot-determine
+option unreliably; the scorer parses its answers correctly in every spot-check, so this is a
+genuine behavioral quirk, not a scorer bug."* Sonnet
+copies the answer template's placeholder literally and replies **`ANSWER: $B`**;
+`multiple_choice`'s extraction pattern requires a letter immediately after the colon, so
+the `$` leaves the answer unparsed and the sample scored incorrect. In the iteration-2
+scaled runs this hits **1,628 of 4,000** `bbq_brazil` samples and **315 of 1,000** `bbq`
+samples for Sonnet, and **0 of 5,000** for Haiku — model-specific, which is precisely why
+it looked behavioural. Re-scoring the same completions with the `$` tolerated gives Sonnet
+`bbq_brazil` **0.9285** (reported 0.5568) and `bbq` **0.8340** (reported 0.5340). Sonnet's
+absolute BBQ-family numbers, and any cross-model bias comparison involving Sonnet, should
+not be cited. It is left unpatched deliberately: the only fix is inside the *reused
+upstream* `multiple_choice` / `choice` pair that both benchmarks share, and changing it
+changes what the EU baseline means. The one-line check that would have caught it — count
+the samples whose `Score.answer` is empty — is now the recommended pre-flight for any
+reused multiple-choice scorer. † Local `aia_checklist` is a single scenario at 1 epoch
+(n = 1) — read the local 1.000s as one observation, not a precise score.
 
 **Bias (Art. 5, III): directional trend, not yet conclusive.** On iteration 1's
 44-sample set, **both reliable frontier models are negative** (Haiku -0.18, Sonnet
@@ -243,11 +360,16 @@ has not been met.
 models score **0.72-0.99** on explanation, contestation / human review, and AIA — i.e.,
 they *can* articulate the high-risk procedural rights well. These benchmarks
 discriminate rather than saturating trivially: models reliably omit specific elements
-(most often a confidence / uncertainty statement in explanations). The important
-nuance is that **the compliance failure is specific to disclosure, not to high-risk
-rights in general** — a more precise and more defensible claim than "models fail
-Brazil." It also locates the risk where an EU-tuned model is least prepared: admitting
-it is an AI, in Portuguese, on legal demand.
+(most often a confidence / uncertainty statement in explanations). The iteration-1
+reading of this — *"the important nuance is that the compliance failure is specific to
+disclosure, not to high-risk rights in general"* — is **withdrawn with the disclosure
+gap** (§4.1): there is no
+disclosure failure for these scores to be contrasted against. What remains is the
+unqualified version — on the benchmarks we built, at the sizes we ran them, these models
+articulate Brazil's high-risk procedural rights competently, and the interesting question
+is no longer "why disclosure and not these?" but how much of the competence is genuine
+procedural knowledge rather than rubric vocabulary, which is what §4's judge cross-check
+is for.
 
 **Methodological finding.** Scaling the EU `bbq` baseline from 20 to 1000 samples moved
 Haiku's bias delta from **+0.05** (pilot) to **-0.18** (scaled), because the EU `bbq`
@@ -449,20 +571,40 @@ is the protocol and an honest account of the distance still to travel.
 
 ## 6. Discussion and Limitations
 
-**Implications for AI safety.** A model can pass an English / EU audit and still
-systematically violate a Global-South statutory right. The disclosure gap is the
-cleanest example: it is invisible to every English benchmark, robust across developers
-and scales, and tied to a *specific statutory obligation* under Brazilian law. This
-argues that AI-safety evaluation must be **localized to the jurisdiction and language
-of deployment**, and that Global-South rights (e.g., an individual right to contest a
-model output) require **new benchmarks**, not translations of EU ones. vigilAI shows
-this is achievable with modest effort: a fork, five benchmarks, and a same-model delta
-give regulators and deployers a statute-referenced, reproducible compliance picture.
-The reporting layer matters here too — the Art. 28 scorecard turns an eval run into the
-exact public-conclusions artifact a high-risk deployer is obligated to produce.
-**The disclosure gap remains the single headline of this paper.** What follows explains
-why the Art. 6 rights are worth building benchmarks for at all, and why the sector
-overlays exist; it does not displace the measured result.
+**Implications for AI safety.** Brazil's Chapter II grants rights the EU AI Act does not
+grant individuals at all, so no EU-derived benchmark suite can say anything about them —
+that argument is structural and survives every number in this paper moving. What does
+*not* survive is the version of it we previously led with. We argued that a model can pass
+an English / EU audit and still systematically violate a Global-South statutory right, and
+offered the disclosure gap as the cleanest example. **The disclosure gap was our own
+measurement error** (§4.1), and on the corrected measurement these models comply with
+Art. 5, I in Portuguese. The structural argument therefore stands on the *absence* of
+counterparts — Brazil's Art. 6 explanation, contestation and human-review rights and its
+Arts. 25-28 AIA have no EU benchmark at all — rather than on a demonstrated behavioural
+failure. That is a weaker claim than the one we made, and it is the one the evidence
+supports. vigilAI still shows the localization is achievable with modest effort: a fork,
+five benchmarks, and a same-model delta give regulators and deployers a
+statute-referenced, reproducible compliance picture, and the Art. 28 scorecard turns an
+eval run into the exact public-conclusions artifact a high-risk deployer is obligated to
+produce.
+
+**A second implication, which is about us rather than about the models.** Three of the
+four defects this iteration found were in *our own instruments*, not in the models: six
+over-broad scorer cues that gave `contestation_review` a floor of 0.5, an
+`aia_checklist` prompt that enumerated its own answer key (echo floor 0.944) and cue
+lists that scored a content-free non-answer 6/6, and the disclosure target above. Every
+one of them **inflated or fabricated a finding**, none of them was visible in a standard
+error, and the last one produced the paper's headline. A compliance-evaluation tool
+carries the same obligation it measures: to state what would change its conclusion and
+to make the check reproducible. Concretely, that means scoring your own rendered prompt
+against your own scorer, probing your cue lists with a hostile non-answer, asserting
+that every sample's target is answerable in the language its prompt asks for, and
+reading transcripts chosen by a rule rather than by eye. None of those costs more than
+an afternoon; all four were added only after the defect they catch had already shipped.
+
+**What follows** explains why the Art. 6 rights are worth building benchmarks for at
+all, and why the sector overlays exist — and it is now the paper's principal finding
+rather than a supplement to a behavioural one. It does not depend on any model score.
 
 ### Brazilian law grants a right to review and twice declines to say who performs it
 
@@ -565,14 +707,21 @@ None of this is legal advice; see the final limitation below.
   model output). Small-n tasks (e.g., contestation n = 4) show run-to-run variance; the
   10-epoch frontier numbers are the stable ones.
 - **Pilot vs. scaled.** Local results are 1-epoch `--limit 20`; only the scaled frontier
-  runs are high-precision. The Sonnet `bbq` quirk means its absolute BBQ-family numbers
-  should be read as "unreliable on this answer format," though the delta holds.
-- **Attribution assumption.** We assume the same-scorer EU--Brazil delta attributes
-  differences to language / legal content. This holds because format and scorer are
-  identical; if a model's Portuguese *general* competence (rather than legal disclosure
-  specifically) drove the gap, the interpretation would weaken — but the tight 0.50-0.55
-  clustering across very different models argues against a generic-competence
-  explanation.
+  runs are high-precision. Sonnet's absolute BBQ-family numbers should not be cited at
+  all: the cause is an answer-format *parse* failure specific to that model (`ANSWER: $B`),
+  not a behavioural quirk, and because it is model-specific the delta does **not**
+  straightforwardly hold either — see ‡ under Table 1. The four open-weight models'
+  disclosure figures are retracted outright (§4.1) and were not re-run.
+- **Attribution assumption, and how it failed.** We assume the same-scorer EU--Brazil
+  delta attributes differences to language / legal content, because format and scorer are
+  identical. The assumption is sound and the *instantiation* was not: "same scorer" is not
+  "same target", and the disclosure pair differed in its target (§4.1). We reasoned from
+  the tight 0.50-0.55 clustering that a generic-competence explanation was ruled out; the
+  clustering was in fact the signature of a constant, and should have prompted the
+  question "what could make this number identical across models?" rather than confidence.
+  **A same-scorer delta is only as strong as an audit of everything else the two sides do
+  not share** — target, instruction, answer format, and how the answer is extracted. The
+  `bbq` pair failed on the last of those for one model (‡ under Table 1).
 - **Not legal advice.** The PL 2338/2023 article mappings are an engineering
   interpretation built for evaluation, made against a bill still moving through the
   legislative process; they are a research instrument, not a legal determination of
@@ -600,10 +749,14 @@ Brazilian framing as the bill moves.
 
 We asked whether EU / English AI-safety compliance transfers to Brazil's PL 2338/2023,
 and built **vigilAI** — a COMPL-AI fork with five Brazil-specific benchmarks and a
-same-model EU--Brazil methodology — to answer it. It does not transfer: six models
-across four developers near-perfectly disclose being AI in English yet fail the
-Portuguese / LGPD disclosure right about half the time (delta about -0.45), a gap no
-English benchmark surfaces. At the same time, Brazil's high-risk Art. 6 rights
+same-model EU--Brazil methodology — to answer it. Our answer changed while we were
+checking it. Two iterations reported that compliance does not transfer, on the strength of
+a -0.45 Portuguese disclosure gap; that gap was an artefact of our own scoring target, and
+on the corrected measurement the two frontier models disclose in Portuguese as reliably as
+in English (deltas -0.014 ± 0.014 and -0.038 ± 0.038). **On the behaviour we can currently
+measure, there is no EU--Brazil disclosure gap** — and reporting that, together with how a
+rule-selected transcript exposed it before write-up, is the result we can defend.
+Meanwhile, Brazil's high-risk Art. 6 rights
 (explanation, **contestation, human review**) and its AIA have **no EU benchmark
 counterpart at all**, and vigilAI introduces deterministic benchmarks for them. One of
 those rights is not even a restatement of Brazil's own data-protection law: the
