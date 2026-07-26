@@ -167,6 +167,8 @@ from inspect_ai.scorer import stderr
 from inspect_ai.scorer import Target
 from inspect_ai.solver import TaskState
 
+from vigilai.tasks.judge import render_judge_instructions
+
 
 # ---------------------------------------------------------------------------------------
 # Sector vocabulary.
@@ -2071,6 +2073,46 @@ ALL_AIA_ITEMS: list[AIAItem] = list(AIA_CHECKLIST) + [
 #: keeping ``build_brazil_report`` header-only. A test pins the two against each other.
 GAP_ITEM_IDS: tuple[str, ...] = tuple(item.id for item in ALL_AIA_ITEMS if item.is_gap)
 
+#: The same ids, **partitioned by sector** — the Resolution 11 fix (iteration 2, Phase 6).
+#:
+#: Phase 5 recorded a defect it could not fix under its append-only criterion: ``--json``'s
+#: ``sector_overlay[].gap_items`` repeated **all five** gap ids in **every** sector entry, so
+#: ``health_anvisa`` — which has none — listed five. The cause is that ``brazil_gap_items`` is one
+#: flat decorator string, giving the header-only aggregator no per-sector view. Phase 6 opens the
+#: report anyway, so the task now also carries ``brazil_gap_items_by_sector`` and the JSON is
+#: accurate. Markdown and HTML were never wrong (they print one aggregated line per section).
+#:
+#: A sector with no gap item is simply absent here, and that absence is the finding: health has no
+#: gap item because its three regimes (ANVISA / CFM / ANS) between them leave no PL 2338 right
+#: wholly unmirrored, while banking and capital markets each do.
+GAP_ITEMS_BY_SECTOR: dict[str, tuple[str, ...]] = {
+    sector: tuple(item.id for item in SECTOR_ITEMS[sector] if item.is_gap)
+    for sector in SECTORS
+    if any(item.is_gap for item in SECTOR_ITEMS[sector])
+}
+
+#: Separators for the ``brazil_gap_items_by_sector`` decorator attrib: ``sector:id|id;sector:id``.
+#: A decorator attrib value must be a **literal** (``list_tasks`` AST-parses attribs and silently
+#: drops anything ``ast.literal_eval`` cannot evaluate — the Phase 4 trap), so the string cannot be
+#: derived from :data:`GAP_ITEMS_BY_SECTOR` at the decorator. :func:`render_gap_items_by_sector`
+#: renders what the literal must say and a test pins the two together.
+GAP_SECTOR_SEPARATOR = ";"
+GAP_SECTOR_FIELD_SEPARATOR = ":"
+GAP_ID_SEPARATOR = "|"
+
+
+def render_gap_items_by_sector() -> str:
+    """Render :data:`GAP_ITEMS_BY_SECTOR` in the ``brazil_gap_items_by_sector`` attrib format.
+
+    Not called by the decorator — it *cannot* be, because the attrib must hold a literal. It exists
+    so a test can assert the hand-written literal still equals the data, the same guard
+    ``brazil_gap_items`` has carried since Phase 4.
+    """
+    return GAP_SECTOR_SEPARATOR.join(
+        f"{sector}{GAP_SECTOR_FIELD_SEPARATOR}{GAP_ID_SEPARATOR.join(ids)}"
+        for sector, ids in GAP_ITEMS_BY_SECTOR.items()
+    )
+
 
 def items_for_sector(sector: str | None) -> list[AIAItem]:
     """The applicable checklist for ``sector``: the cross-sector items plus that sector's.
@@ -2096,6 +2138,109 @@ def items_by_id(item_ids: list[str]) -> list[AIAItem]:
     """
     wanted = set(item_ids)
     return [item for item in ALL_AIA_ITEMS if item.id in wanted]
+
+
+# ---------------------------------------------------------------------------------------
+# The LLM-judge cross-check (iteration 2, Phase 6).
+#
+# Two things make this task's judge different from the two Art. 6 rubric judges.
+#
+# 1. **The obligation set varies per sample.** Resolution 10 gave every scenario a genuine
+#    ``expected_items`` — 8 items for a health-plan prior-authorisation engine, 15 for hospital
+#    diagnostic imaging — so a static instruction block cannot enumerate them. The applicable
+#    items are rendered per sample into ``metadata["judge_items"]`` and reach the grader through
+#    :data:`AIA_JUDGE_TEMPLATE`. The judge therefore grades against **exactly the denominator the
+#    deterministic scorer uses**; anything else would make the delta an artifact of two different
+#    item sets rather than of two ways of reading the same answer.
+# 2. **Some listed obligations are ones no Brazilian instrument imposes** (the ⭐ gap items). They
+#    are still listed and still graded, because what they measure is whether the deployer
+#    *voluntarily exceeds* a duty that does not exist. The instructions say so explicitly, or a
+#    conscientious grader would mark them ABSENT-by-correction ("Brazilian law does not require
+#    this") and silently invert their meaning.
+#
+# The item list reaching the *judge* is not the prompt-echo problem Resolution 9 fixed: the subject
+# model never sees it in the ``unguided`` condition, and a test pins that ``judge_items`` stays out
+# of ``Sample.input`` in both conditions.
+# ---------------------------------------------------------------------------------------
+def render_judge_items(items: list[AIAItem]) -> str:
+    """Render the obligations one sample is scored on, for the judge's prompt.
+
+    ``id — description`` per line, in checklist order, with the gap items marked so the grader
+    knows an obligation is one no instrument imposes rather than one it has failed to recognise.
+    """
+    lines: list[str] = []
+    for item in items:
+        marker = " [no Brazilian instrument imposes this one]" if item.is_gap else ""
+        lines.append(f"- {item.id}{marker}: {item.description}")
+    return "\n".join(lines)
+
+
+#: The ``aia_checklist`` grading prompt. Identical in shape to
+#: :data:`~vigilai.tasks.judge.JUDGE_TEMPLATE` plus one block: the per-sample obligation list from
+#: ``metadata["judge_items"]``. Inspect formats the template with the sample's metadata as keyword
+#: arguments, so the slot resolves per sample with no scorer-side plumbing.
+AIA_JUDGE_TEMPLATE = """
+You are auditing whether a compliance adviser's answer actually sets out the obligations a
+concrete Brazilian AI deployment must meet. Here is the data:
+
+[BEGIN DATA]
+***
+[Question put to the adviser]: {question}
+***
+[The adviser's answer]: {answer}
+***
+[The obligations this deployment is assessed on]:
+{judge_items}
+***
+[END DATA]
+
+{instructions}
+"""
+
+_AIA_JUDGE_ELEMENT_BLOCK = """Each obligation is listed above as `id: statement`, in the block
+[The obligations this deployment is assessed on]. Judge every one of them, using its `id` as the
+key in your verdict lines, in the order listed.
+
+An obligation is established when the answer states it as something **this organisation must do
+in this deployment**, specifically enough that a compliance officer could act on it or a
+regulator could check it — who does it, when, what is documented, what is disclosed, to whom, or
+what the affected person can do. Naming the topic is not stating the obligation: "a empresa deve
+observar as normas do Banco Central" establishes nothing, and neither does listing the statute.
+
+Some of the obligations are marked **[no Brazilian instrument imposes this one]**. Those are in
+the list on purpose: they test whether the adviser voluntarily goes beyond what Brazilian law
+requires. Grade them exactly like the others — SUBSTANTIVE if the answer commits to the practice,
+ABSENT if it does not. **Do not** mark one ABSENT on the ground that it is not legally required,
+and do not credit an answer that merely observes that Brazilian law is silent on it."""
+
+#: Grading instructions for the ``aia_checklist`` judge. The elements are named per sample by the
+#: template rather than enumerated here — see the block comment above.
+AIA_JUDGE_INSTRUCTIONS: str = render_judge_instructions(
+    context=(
+        "The submission is an AI-compliance adviser's answer about a named, concrete Brazilian "
+        "high-risk deployment. Two layers of obligation are in play: the Avaliação de Impacto "
+        "Algorítmico required by PL 2338/2023, Arts. 25-28, and the sector regime already in "
+        "force over that deployment (BACEN/CMN, ANVISA/CFM/ANS, or CVM). You are deciding "
+        "whether the answer actually states the applicable obligations — not whether it is "
+        "long, confident, or full of the right nouns."
+    ),
+    element_noun="obligation",
+    element_count="<the number of obligations listed>",
+    element_block=_AIA_JUDGE_ELEMENT_BLOCK,
+    substantive_examples=(
+        "who conducts the assessment, when it is done, what it documents, what is published and "
+        "to whom, which regulator's channel applies, what the affected person can do about the "
+        "decision"
+    ),
+    absent_examples=(
+        '"a organização deve cumprir a LGPD e as normas aplicáveis" establishes nothing;',
+        '"deve ser feita uma avaliação de impacto" without who conducts it, when, what it '
+        "documents or what is published establishes nothing;",
+        "a word that merely resembles the obligation (as informações *constantes* do relatório, "
+        "o *operador* de telefonia, o *provedor* de nuvem, *publicidade* nos preços) "
+        "establishes nothing;",
+    ),
+)
 
 
 def _normalize(text: str) -> str:

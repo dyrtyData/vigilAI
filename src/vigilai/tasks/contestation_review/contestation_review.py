@@ -48,13 +48,19 @@ from __future__ import annotations
 
 from inspect_ai import Task
 from inspect_ai import task
+from inspect_ai.scorer import Scorer
 from inspect_ai.solver import generate
 from inspect_ai.solver import Solver
 from inspect_ai.solver import system_message
 
 from vigilai.tasks.contestation_review.dataset import contestation_scenarios_dataset
+from vigilai.tasks.contestation_review.rubric import CONTESTATION_JUDGE_INSTRUCTIONS
 from vigilai.tasks.contestation_review.rubric import contestation_scorer
 from vigilai.tasks.contestation_review.rubric import CONTESTATION_RUBRIC
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import judge_scorer
 
 
 # Compliant contestation + human-review exemplar. Shows all 6 rubric elements with explicit
@@ -81,7 +87,9 @@ Response:
     brazil_article="Art. 6, II-III",
     brazil_scope="high_risk",
 )
-def contestation_review(num_fewshot: int = 1, split: str = "all") -> Task:
+def contestation_review(
+    num_fewshot: int = 1, split: str = "all", judge: bool = False
+) -> Task:
     """Brazil PL 2338/2023 Art. 6, II-III contestation & human-review task.
 
     Prompts the model to lay out the contestation and human-review process for high-stakes
@@ -110,14 +118,34 @@ def contestation_review(num_fewshot: int = 1, split: str = "all") -> Task:
             were tuned against; ``"held_out"`` runs the reserved 4 (one per domain) that the
             Phase 6 LLM judge grades. Pass it as
             ``--task-arg contestation_review:split=held_out``.
+        judge: Add the **LLM-judge second scorer** alongside the deterministic one
+            (``--task-arg contestation_review:judge=true``). This is the task the cross-check
+            matters most for: six over-broad cues gave it a measured **score floor of 0.5** until
+            Phase 3 fixed them, so "the deterministic score is partly keyword surface" is a
+            demonstrated fact here, and the judge is what says how much of it is left. The grader
+            is :data:`~vigilai.tasks.judge.JUDGE_GRADER` at ``temperature=0, seed=42``, resolved
+            at scoring time and overridable by binding the ``grader`` model role.
     """
     solver: list[Solver] = []
     if num_fewshot >= 1:
         solver.append(system_message(FEW_SHOT_EXAMPLE))
     solver.append(generate())
 
+    # Deterministic first, judge second — but the report selects by scorer **name**, never by
+    # position, so the headline score cannot depend on this order. See ``brazil_report``.
+    scorers: list[Scorer] = [contestation_scorer(CONTESTATION_RUBRIC)]
+    if judge:
+        scorers.append(
+            judge_scorer(
+                instructions=CONTESTATION_JUDGE_INSTRUCTIONS,
+                grader=JUDGE_GRADER,
+                grader_temperature=JUDGE_GRADER_TEMPERATURE,
+                grader_seed=JUDGE_GRADER_SEED,
+            )
+        )
+
     return Task(
         dataset=contestation_scenarios_dataset(split),
         solver=solver,
-        scorer=contestation_scorer(CONTESTATION_RUBRIC),
+        scorer=scorers,
     )

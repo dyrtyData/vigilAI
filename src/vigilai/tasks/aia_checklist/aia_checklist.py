@@ -81,13 +81,17 @@ from inspect_ai import Task
 from inspect_ai import task
 from inspect_ai.dataset import MemoryDataset
 from inspect_ai.dataset import Sample
+from inspect_ai.scorer import Scorer
 from inspect_ai.solver import generate
 
 from vigilai.tasks.aia_checklist.checklist import AIA_CHECKLIST
+from vigilai.tasks.aia_checklist.checklist import AIA_JUDGE_INSTRUCTIONS
+from vigilai.tasks.aia_checklist.checklist import AIA_JUDGE_TEMPLATE
 from vigilai.tasks.aia_checklist.checklist import aia_checklist_scorer
 from vigilai.tasks.aia_checklist.checklist import AIAItem
 from vigilai.tasks.aia_checklist.checklist import GAP_ITEM_IDS
 from vigilai.tasks.aia_checklist.checklist import items_for_sector
+from vigilai.tasks.aia_checklist.checklist import render_judge_items
 from vigilai.tasks.aia_checklist.checklist import SECTOR_REGIME_PT
 from vigilai.tasks.aia_checklist.scenario import AIA_SCENARIOS
 from vigilai.tasks.aia_checklist.scenario import aia_scenarios
@@ -100,6 +104,10 @@ from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_GUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_UNGUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODES
 from vigilai.tasks.aia_checklist.scenario import resolve_prompt_mode
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import judge_scorer
 from vigilai.tasks.rubric_scenario import SPLIT_ALL
 from vigilai.tasks.rubric_scenario import SPLIT_HELD_OUT
 from vigilai.tasks.rubric_scenario import SPLIT_TRAIN
@@ -239,6 +247,15 @@ def aia_checklist_dataset(
                     "item_articles": {item.id: item.article for item in scored},
                     "item_status": {item.id: item.status for item in scored},
                     "split": SPLIT_HELD_OUT if scenario.held_out else SPLIT_TRAIN,
+                    # The same ``scored`` set, rendered for the Phase 6 LLM judge's prompt (the
+                    # applicable items differ per scenario since Resolution 10, so they cannot
+                    # live in a static instruction block). Inspect passes sample metadata as
+                    # format arguments to a ``model_graded_qa`` template, which is how
+                    # ``AIA_JUDGE_TEMPLATE`` reaches it. It is written for **every** run, judge or
+                    # not, so the two conditions produce identical datasets; it never reaches the
+                    # subject's prompt (a test pins that), so it cannot revive the echo floor
+                    # Resolution 9 removed.
+                    "judge_items": render_judge_items(scored),
                     # Which frame produced this prompt. On the sample rather than only in the
                     # task args so a Phase 7 extracted transcript, or a stray log, can never be
                     # attributed to the wrong condition — the two differ by most of the score.
@@ -281,9 +298,23 @@ def aia_checklist_dataset(
         "human_review_gap_lgpd20,pix_fraud_blocking_no_analogue,ai_interaction_disclosure_gap,"
         "algo_impact_public_disclosure_gap_cvm,ai_recommendation_disclosure_gap_cvm"
     ),
+    # The same ids **partitioned by sector** — the Resolution 11 fix (Phase 6). The flat attrib
+    # above gave the header-only aggregator no per-sector view, so `--json`'s
+    # `sector_overlay[].gap_items` repeated all five ids in every sector entry and `health_anvisa`
+    # — which has none — listed five. Format: `sector:id|id;sector:id`. A sector with no gap item
+    # is **absent**, which is the point. Another literal, for the same AST reason as above;
+    # `checklist.render_gap_items_by_sector()` renders what it must say and a test pins them.
+    brazil_gap_items_by_sector=(
+        "finance_bacen:human_review_gap_lgpd20|pix_fraud_blocking_no_analogue"
+        "|ai_interaction_disclosure_gap;"
+        "capital_cvm:algo_impact_public_disclosure_gap_cvm|ai_recommendation_disclosure_gap_cvm"
+    ),
 )
 def aia_checklist(
-    sector: str | None = None, split: str = "all", prompt_mode: str = "unguided"
+    sector: str | None = None,
+    split: str = "all",
+    prompt_mode: str = "unguided",
+    judge: bool = False,
 ) -> Task:
     """Brazil PL 2338/2023 Arts. 25-28 Algorithmic Impact Assessment awareness task.
 
@@ -314,16 +345,42 @@ def aia_checklist(
             ``--log-dir``s:** ``vigilai report`` keys task scores by task name and the later log
             silently overwrites the earlier one, so one dir would report a single, unlabelled
             ``aia_checklist`` row.
+        judge: Add the **LLM-judge second scorer** alongside the deterministic one
+            (``--task-arg aia_checklist:judge=true``). It grades against the *same* per-scenario
+            ``expected_items`` denominator the deterministic scorer uses — rendered into the
+            grader's prompt from ``metadata["judge_items"]`` — so the delta is two readings of one
+            answer, not two different item sets. Judge the **unguided** condition: the guided
+            frame hands the model the obligations, so its deterministic score is a measured floor
+            (0.9091-0.9286 in finance, exactly 1.0000 in health and capital markets) and a judge
+            delta against a tautology says nothing. The grader is
+            :data:`~vigilai.tasks.judge.JUDGE_GRADER` at ``temperature=0, seed=42``.
     """
+    # Deterministic first, judge second — but the report selects by scorer **name**, never by
+    # position. Only the deterministic scorer declares the ``grouped()`` per-sector metrics, so
+    # the sector overlay is unaffected by the judge's presence.
+    scorers: list[Scorer] = [aia_checklist_scorer()]
+    if judge:
+        scorers.append(
+            judge_scorer(
+                instructions=AIA_JUDGE_INSTRUCTIONS,
+                template=AIA_JUDGE_TEMPLATE,
+                grader=JUDGE_GRADER,
+                grader_temperature=JUDGE_GRADER_TEMPERATURE,
+                grader_seed=JUDGE_GRADER_SEED,
+            )
+        )
+
     return Task(
         dataset=aia_checklist_dataset(sector, split, prompt_mode),
         solver=[generate()],
-        scorer=aia_checklist_scorer(),
+        scorer=scorers,
     )
 
 
 __all__ = [
     "AIA_CHECKLIST",
+    "AIA_JUDGE_INSTRUCTIONS",
+    "AIA_JUDGE_TEMPLATE",
     "AIA_SCENARIOS",
     "AIADeployerScenario",
     "DEPLOYER_PROVENANCE_PREFIX",

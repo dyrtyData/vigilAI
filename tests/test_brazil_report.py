@@ -46,7 +46,15 @@ from inspect_ai.scorer import Score
 from inspect_ai.scorer import stderr
 from inspect_ai.solver import generate
 
+from inspect_ai._util.registry import registry_info
+
+from vigilai.report.brazil_report import _DETERMINISTIC_SCORERS
+from vigilai.report.brazil_report import _gap_items_by_sector_from_attribs
+from vigilai.report.brazil_report import _JUDGE_ROLE
+from vigilai.report.brazil_report import _JUDGE_SCORERS
+from vigilai.report.brazil_report import _judge_grader_from_log
 from vigilai.report.brazil_report import _sector_metrics
+from vigilai.report.brazil_report import _select_score
 from vigilai.report.brazil_report import _stderr_metric
 from vigilai.report.brazil_report import ArticleGroup
 from vigilai.report.brazil_report import build_brazil_report
@@ -55,6 +63,19 @@ from vigilai.report.brazil_report import EU_BRAZIL_PAIRS
 from vigilai.report.brazil_report import NINE_TECHNICAL_REQUIREMENTS
 from vigilai.report.brazil_report import SideBySideRow
 from vigilai.report.brazil_report import TaskScore
+from vigilai.tasks.aia_checklist.checklist import aia_checklist_scorer
+from vigilai.tasks.contestation_review.rubric import contestation_scorer
+from vigilai.tasks.contestation_review.rubric import CONTESTATION_RUBRIC
+from vigilai.tasks.explanation_quality.explanation_quality import explanation_quality
+from vigilai.tasks.explanation_quality.rubric import EXPLANATION_RUBRIC
+from vigilai.tasks.explanation_quality.rubric import rubric_scorer
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import JUDGE_ROLE
+from vigilai.tasks.judge import JUDGE_SCORER_NAME
+from vigilai.tasks.judge import judge_scorer
+from vigilai.tasks.rubric_scenario import SPLIT_HELD_OUT
 
 
 # ---------------------------------------------------------------------------------------
@@ -1323,6 +1344,37 @@ def _sector_task(name: str, sectors: list[str]) -> Task:
     return _t()
 
 
+def _sector_task_with_per_sector_gaps(name: str, sectors: list[str]) -> Task:
+    """Like :func:`_sector_task` but also declaring ``brazil_gap_items_by_sector`` (Phase 6).
+
+    ``health_anvisa`` is deliberately **absent** from the mapping while still appearing in the
+    flat attrib — the exact shape of the Resolution 11 bug, so the fix is tested on the case that
+    produced it rather than on a friendly one.
+    """
+
+    @task(
+        name=name,
+        technical_requirement="Societal Alignment",
+        brazil_article="Arts. 25-28",
+        brazil_scope="high_risk",
+        brazil_gap_items=_GAP_ITEMS_FIXTURE,
+        brazil_gap_items_by_sector="finance_bacen:human_review_gap_lgpd20",
+    )
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset(
+                [
+                    Sample(input="q", target="n/a", metadata={"sector": sector})
+                    for sector in sectors
+                ]
+            ),
+            solver=[generate()],
+            scorer=_sector_fraction_scorer(),
+        )
+
+    return _t()
+
+
 @pytest.fixture(scope="module")
 def sector_report(tmp_path_factory: pytest.TempPathFactory) -> BrazilComplianceReport:
     """A run holding one sector-aware task over two sectors, plus one sector-less task.
@@ -1604,3 +1656,404 @@ class TestSectorStandardErrorSuppression:
         group = sector_report.sector_for("finance_bacen")
         assert group is not None
         assert group.tasks[0][2] == pytest.approx(_SECTOR_FIN_SE)
+
+
+# =========================================================================================
+# Iteration 2, Phase 6 — name-based scorer selection, the judge columns, and the per-sector
+# gap list (Resolution 11).
+#
+# The cross-layer trap this phase exists to close: ``_task_score_from_log`` read
+# ``log.results.scores[0]`` — literally the first scorer, with the comment "a task usually has a
+# single score". Adding a judge makes that an index into a two-element list, so the **headline
+# score becomes order-dependent**, silently, with a judge accuracy landing in the per-article
+# compliance table and no error anywhere. Selection is by scorer **name** now, and the fixture
+# below deliberately declares the judge **first** so the test would fail under the old code.
+# =========================================================================================
+
+
+class _StubScore:
+    """Minimal stand-in for ``EvalScore`` — ``_select_score`` only ever reads ``.name``."""
+
+    def __init__(self, name: str, **metrics: float) -> None:
+        self.name = name
+        self.metrics = {k: _StubMetric(v) for k, v in metrics.items()}
+        self.params: dict[str, Any] = {}
+
+
+class TestScorerSelectionIsByName:
+    """``_select_score`` never indexes the list, in either direction."""
+
+    def test_the_deterministic_scorer_wins_however_the_list_is_ordered(self) -> None:
+        deterministic = _StubScore("rubric_scorer", mean=0.9)
+        judge = _StubScore(JUDGE_SCORER_NAME, accuracy=0.2)
+        for order in ([deterministic, judge], [judge, deterministic]):
+            assert _select_score(order, judge=False) is deterministic
+            assert _select_score(order, judge=True) is judge
+
+    def test_all_three_brazil_scorers_are_recognised(self) -> None:
+        for name in ("rubric_scorer", "contestation_scorer", "aia_checklist_scorer"):
+            judge = _StubScore(JUDGE_SCORER_NAME, accuracy=0.2)
+            deterministic = _StubScore(name, mean=0.9)
+            assert _select_score([judge, deterministic], judge=False) is deterministic
+
+    def test_an_upstream_single_scorer_log_resolves_exactly_as_before(self) -> None:
+        """The regression that matters most: ``match`` / ``choice`` are not in the deterministic
+        name list and must still resolve, or every preserved COMPL-AI task loses its score."""
+        for name in ("match", "choice", "some_future_scorer"):
+            only = _StubScore(name, accuracy=0.5)
+            assert _select_score([only], judge=False) is only
+            assert _select_score([only], judge=True) is None
+
+    def test_the_judge_is_never_selected_as_a_headline(self) -> None:
+        judge = _StubScore(JUDGE_SCORER_NAME, accuracy=0.2)
+        assert _select_score([judge], judge=False) is None
+
+    def test_no_scores_at_all(self) -> None:
+        assert _select_score([], judge=False) is None
+        assert _select_score([], judge=True) is None
+
+    def test_the_report_constants_mirror_the_task_modules(self) -> None:
+        """The report deliberately does not import the task package (Resolution 6 plans to extract
+        a jurisdiction-neutral ``report`` command from it), so the two sets of strings are pinned
+        against each other instead of shared."""
+        assert _JUDGE_SCORERS == (JUDGE_SCORER_NAME,)
+        assert _JUDGE_ROLE == JUDGE_ROLE
+        assert set(_DETERMINISTIC_SCORERS) == {
+            registry_info(rubric_scorer(EXPLANATION_RUBRIC)).name.split("/")[-1],
+            registry_info(contestation_scorer(CONTESTATION_RUBRIC)).name.split("/")[-1],
+            registry_info(aia_checklist_scorer()).name.split("/")[-1],
+        }
+
+
+# --- The judge fixture: a real two-scorer log, with the judge declared FIRST ----------------
+#
+# ``_judge_first_task`` puts the judge at index 0 on purpose. Under the old ``scores[0]`` code the
+# per-article table would show the judge's accuracy as the compliance score.
+_JUDGE_GRADES = ["GRADE: C", "GRADE: I", "GRADE: I", "GRADE: I"]  # accuracy 0.25
+_JUDGE_ACCURACY = 0.25
+_JUDGE_SE = statistics.stdev([1.0, 0.0, 0.0, 0.0]) / math.sqrt(4)  # 0.250000
+_DETERMINISTIC_MEAN = 0.75
+_DETERMINISTIC_SE = statistics.stdev([1.0, 1.0, 1.0, 0.0]) / math.sqrt(4)  # 0.250000
+
+
+def _judge_first_task(name: str, article: str, scope: str) -> Task:
+    """A Brazil-tagged task whose **judge is declared before** its deterministic scorer."""
+
+    @task(
+        name=name,
+        technical_requirement="Interpretability",
+        brazil_article=article,
+        brazil_scope=scope,
+    )
+    def _t() -> Task:
+        return Task(
+            dataset=MemoryDataset([Sample(input="q", target="n/a") for _ in range(4)]),
+            solver=[generate()],
+            scorer=[
+                judge_scorer(
+                    instructions="stub",
+                    grader=JUDGE_GRADER,
+                    grader_temperature=JUDGE_GRADER_TEMPERATURE,
+                    grader_seed=JUDGE_GRADER_SEED,
+                ),
+                _fraction_scorer(),
+            ],
+        )
+
+    return _t()
+
+
+@pytest.fixture(scope="module")
+def judge_report(tmp_path_factory: pytest.TempPathFactory) -> BrazilComplianceReport:
+    """A run with one judged task (judge first in the scorer list) and one unjudged task.
+
+    * ``explanation_quality``: deterministic 1.0/1.0/1.0/0.0 → 0.750 ± 0.250; judge C/I/I/I →
+      accuracy 0.250 ± 0.250; Δ = +0.500.
+    * ``contestation_review``: no judge at all → absent from the judge table.
+    """
+    log_dir = str(tmp_path_factory.mktemp("judge_logs"))
+    subject = get_model(
+        "mockllm/model",
+        custom_outputs=[
+            ModelOutput.from_content("mockllm/model", c) for c in ["1.0", "1.0", "1.0", "0.0"]
+        ],
+    )
+    grader = get_model(
+        "mockllm/model",
+        custom_outputs=[ModelOutput.from_content("mockllm/model", g) for g in _JUDGE_GRADES],
+    )
+    logs = inspect_eval(
+        _judge_first_task("explanation_quality", "Art. 6, I", "high_risk"),
+        model=subject,
+        model_roles={"grader": grader},
+        display="none",
+        log_dir=log_dir,
+    )
+    assert logs[0].status == "success", logs[0].error
+    _run_samples_into(
+        log_dir,
+        _multi_sample_task(
+            "contestation_review",
+            "Societal Alignment",
+            samples=4,
+            article="Art. 6, II-III",
+            scope="high_risk",
+        ),
+        ["1.0", "1.0", "0.0", "0.0"],
+    )
+    return build_brazil_report(log_dir)
+
+
+class TestJudgeAggregation:
+    """Both scores reach ``TaskScore``, and the deterministic one is still the headline."""
+
+    def test_the_headline_is_the_deterministic_score_despite_the_judge_being_first(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        by_task = {t.task: t for t in judge_report.brazil_task_scores}
+        row = by_task["explanation_quality"]
+        assert row.metric_name == "mean"
+        assert row.score == pytest.approx(_DETERMINISTIC_MEAN)
+        assert row.stderr == pytest.approx(_DETERMINISTIC_SE)
+
+    def test_the_per_article_table_shows_the_deterministic_score(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        """The end-to-end form of the same guarantee, through the rendered artifact."""
+        md = judge_report.to_markdown()
+        assert "| Art. 6, I | high_risk | `explanation_quality` | Interpretability | 0.750 ± 0.250 |" in md
+
+    def test_the_judge_score_is_read_from_the_judge_scorer(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        row = {t.task: t for t in judge_report.brazil_task_scores}["explanation_quality"]
+        assert row.has_judge
+        assert row.judge_metric_name == "accuracy"
+        assert row.judge_score == pytest.approx(_JUDGE_ACCURACY)
+        assert row.judge_stderr == pytest.approx(_JUDGE_SE)
+
+    def test_the_delta_and_its_propagated_error(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        row = {t.task: t for t in judge_report.brazil_task_scores}["explanation_quality"]
+        assert row.judge_delta == pytest.approx(_DETERMINISTIC_MEAN - _JUDGE_ACCURACY)
+        assert row.judge_delta_stderr == pytest.approx(
+            math.sqrt(_DETERMINISTIC_SE**2 + _JUDGE_SE**2)
+        )
+
+    def test_a_task_without_a_judge_carries_none(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        row = {t.task: t for t in judge_report.brazil_task_scores}["contestation_review"]
+        assert not row.has_judge
+        assert row.judge_score is None
+        assert row.judge_delta is None
+        assert row.judge_delta_stderr is None
+
+    def test_judge_rows_holds_only_the_judged_tasks(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        assert [t.task for t in judge_report.judge_rows] == ["explanation_quality"]
+
+    def test_the_grader_comes_from_the_bound_role_not_the_declared_default(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        """A header claiming Opus graded a mock-graded run would be a lie in a published
+        artifact, so the bound role wins over the scorer's declared default."""
+        row = {t.task: t for t in judge_report.brazil_task_scores}["explanation_quality"]
+        assert row.judge_grader == "mockllm/model"
+        assert row.judge_grader_config == "grader_temperature=0.0, grader_seed=42"
+
+    def test_the_declared_grader_is_used_when_no_role_was_bound(self) -> None:
+        """The real-run case: the CLI leaves the role unbound and the scorer resolves its pinned
+        default, which its params record verbatim."""
+
+        class _Spec:
+            model_roles = None
+
+        class _Log:
+            eval = _Spec()
+
+        judge = _StubScore(JUDGE_SCORER_NAME, accuracy=0.2)
+        judge.params = {
+            "grader": JUDGE_GRADER,
+            "grader_temperature": 0.0,
+            "grader_seed": 42,
+        }
+        grader, config = _judge_grader_from_log(_Log(), judge)  # type: ignore[arg-type]
+        assert grader == JUDGE_GRADER
+        assert config == "grader_temperature=0.0, grader_seed=42"
+
+    def test_the_split_label_rides_in_from_the_task_args(self, tmp_path: Path) -> None:
+        """Resolution 1 reports held-out and full-set agreement separately, **always labelled**,
+        so the label has to come off the artifact rather than off the operator's memory."""
+        log_dir = str(tmp_path / "split_logs")
+        grader = get_model(
+            "mockllm/model",
+            custom_outputs=[ModelOutput.from_content("mockllm/model", "GRADE: C")] * 4,
+        )
+        logs = inspect_eval(
+            explanation_quality(split=SPLIT_HELD_OUT, judge=True),
+            model="mockllm/model",
+            model_roles={"grader": grader},
+            display="none",
+            log_dir=log_dir,
+        )
+        assert logs[0].status == "success", logs[0].error
+        report = build_brazil_report(log_dir)
+        row = report.judge_rows[0]
+        assert row.split == SPLIT_HELD_OUT
+        assert row.total_samples == 4
+        assert "| `explanation_quality` | held_out | 4 |" in report.to_markdown()
+
+
+class TestJudgeRendering:
+    """The section renders in all three views, states the scales, and names the grader."""
+
+    def test_markdown_renders_the_table(self, judge_report: BrazilComplianceReport) -> None:
+        md = judge_report.to_markdown()
+        assert "## Deterministic vs. LLM-judge (held-out)" in md
+        assert (
+            "| `explanation_quality` | — | 4 | 0.750 ± 0.250 | 0.250 ± 0.250 | +0.500 ± 0.354 |"
+            in md
+        )
+
+    def test_markdown_names_the_grader_and_its_config(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        """"Reproducible from the artifact alone" — the number is worthless without the grader."""
+        md = judge_report.to_markdown()
+        assert "**Grader:** `mockllm/model` at `grader_temperature=0.0, grader_seed=42`" in md
+        assert "bound as model role `grader`" in md
+
+    def test_markdown_says_the_two_columns_are_different_measures(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        """The one sentence that stops the delta being read as an error rate."""
+        md = judge_report.to_markdown()
+        assert (
+            "**The two columns are different measures on the same 0-1 range, not two estimates "
+            "of one quantity.**" in md
+        )
+        assert "mean *fraction of rubric elements* detected" in md
+        assert "*fraction of replies graded `C`*" in md
+        assert "It is not an error, not a disagreement rate, and not a correction." in md
+
+    def test_markdown_says_the_delta_error_is_an_upper_bound(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        md = judge_report.to_markdown()
+        assert "**Δ's error bar is an upper bound.**" in md
+        assert "same samples in the same run" in md
+
+    def test_markdown_omits_the_section_when_no_judge_ran(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        assert "LLM-judge" not in sector_report.to_markdown()
+
+    def test_markdown_section_order_is_fixed(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        md = judge_report.to_markdown()
+        assert (
+            md.index("## EU ↔ Brazil side-by-side")
+            < md.index("## Deterministic vs. LLM-judge (held-out)")
+            < md.index("## Brazil compliance coverage map (9 requirements)")
+        )
+
+    def test_json_carries_the_judge_rows(self, judge_report: BrazilComplianceReport) -> None:
+        data = json.loads(judge_report.to_json())
+        rows = {row["task"]: row for row in data["deterministic_vs_judge"]}
+        assert set(rows) == {"explanation_quality"}
+        row = rows["explanation_quality"]
+        assert row["deterministic_score"] == pytest.approx(_DETERMINISTIC_MEAN)
+        assert row["deterministic_metric"] == "mean"
+        assert row["judge_score"] == pytest.approx(_JUDGE_ACCURACY)
+        assert row["judge_metric"] == "accuracy"
+        assert row["judge_grader"] == "mockllm/model"
+        assert row["judge_grader_config"] == "grader_temperature=0.0, grader_seed=42"
+        assert row["delta"] == pytest.approx(0.5)
+        assert row["delta_stderr_is_upper_bound"] is True
+
+    def test_json_judge_rows_are_empty_when_no_judge_ran(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        assert json.loads(sector_report.to_json())["deterministic_vs_judge"] == []
+
+    def test_html_renders_the_section(self, judge_report: BrazilComplianceReport) -> None:
+        doc = judge_report.to_html()
+        assert "<h2>Deterministic vs. LLM-judge (held-out)</h2>" in doc
+        assert '<span class="badge warn">0.750</span> <span class="se">± 0.250<' in doc
+        assert '<span class="badge bad">0.250</span> <span class="se">± 0.250<' in doc
+        assert '<span class="badge good">+0.500</span> <span class="se">± 0.354<' in doc
+
+    def test_html_names_the_grader(self, judge_report: BrazilComplianceReport) -> None:
+        doc = judge_report.to_html()
+        assert "<strong>Grader:</strong> <code>mockllm/model</code>" in doc
+
+    def test_html_stays_self_contained_with_the_judge_section(
+        self, judge_report: BrazilComplianceReport
+    ) -> None:
+        doc = judge_report.to_html()
+        assert "src=" not in doc
+        assert "href=" not in doc
+        assert "http://" not in doc
+        assert "https://" not in doc
+
+    def test_html_omits_the_section_when_no_judge_ran(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        assert "LLM-judge" not in sector_report.to_html()
+
+
+class TestPerSectorGapItemsInTheReport:
+    """Resolution 11 — the JSON per-sector gap list, carried in from Phase 5."""
+
+    def test_the_parser_reads_the_attrib_format(self) -> None:
+        parsed = _gap_items_by_sector_from_attribs(
+            {"brazil_gap_items_by_sector": "finance_bacen:a|b;capital_cvm:c"}
+        )
+        assert parsed == {"finance_bacen": ("a", "b"), "capital_cvm": ("c",)}
+
+    def test_a_pre_phase_6_log_has_no_mapping(self) -> None:
+        assert _gap_items_by_sector_from_attribs({"brazil_gap_items": "a,b"}) == {}
+        assert _gap_items_by_sector_from_attribs({}) == {}
+
+    def test_malformed_entries_are_skipped_rather_than_raising(self) -> None:
+        parsed = _gap_items_by_sector_from_attribs(
+            {"brazil_gap_items_by_sector": ";finance_bacen:a;garbage;health_anvisa:"}
+        )
+        assert parsed == {"finance_bacen": ("a",)}
+
+    def test_each_sector_gets_only_its_own_gap_items(self, tmp_path: Path) -> None:
+        """The bug, and the fix: ``health_anvisa`` has no gap item and must list none."""
+        log_dir = str(tmp_path / "per_sector_gap_logs")
+        _run_samples_into(
+            log_dir,
+            _sector_task_with_per_sector_gaps(
+                "aia_checklist",
+                ["finance_bacen"] * 2 + ["health_anvisa"] * 2,
+            ),
+            ["1.0", "0.0", "1.0", "0.0"],
+        )
+        report = build_brazil_report(log_dir)
+        finance = report.sector_for("finance_bacen")
+        health = report.sector_for("health_anvisa")
+        assert finance is not None and health is not None
+        assert finance.gap_items == ("human_review_gap_lgpd20",)
+        assert health.gap_items == ()
+        overlay = {
+            entry["sector"]: entry
+            for entry in json.loads(report.to_json())["sector_overlay"]
+        }
+        assert overlay["finance_bacen"]["gap_items"] == ["human_review_gap_lgpd20"]
+        assert overlay["health_anvisa"]["gap_items"] == []
+
+    def test_a_pre_phase_6_log_keeps_its_documented_imprecision(
+        self, sector_report: BrazilComplianceReport
+    ) -> None:
+        """The fallback is deliberate: the per-sector split genuinely is not in an older log, and
+        inventing one would be worse than reproducing what that log actually recorded."""
+        health = sector_report.sector_for("health_anvisa")
+        assert health is not None
+        assert health.gap_items == tuple(sorted(_GAP_ITEMS_FIXTURE.split(",")))

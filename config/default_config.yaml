@@ -13,6 +13,7 @@ aia_checklist:
   sector: null
   split: all
   prompt_mode: unguided
+  judge: false
 
 aime_2025:
   num_epochs: 4
@@ -49,10 +50,12 @@ cab:
 contestation_review:
   num_fewshot: 1
   split: all
+  judge: false
 
 explanation_quality:
   num_fewshot: 1
   split: all
+  judge: false
 
 fairllm:
   sample_size: 200

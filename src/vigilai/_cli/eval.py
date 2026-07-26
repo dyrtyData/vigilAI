@@ -5,6 +5,7 @@ import typer
 from inspect_ai import eval_set
 from inspect_ai import TaskInfo
 from inspect_ai._cli.util import parse_cli_config
+from inspect_ai._cli.util import parse_model_role_cli_args
 from inspect_ai.model import CachePolicy
 from rich import print
 from typing_extensions import Annotated
@@ -91,6 +92,21 @@ def eval_command(
         str | None,
         typer.Option("--model-config", help="Model arguments file (JSON or YAML)."),
     ] = None,
+    model_role: Annotated[
+        list[str],
+        typer.Option(
+            "--model-role",
+            help=(
+                "Bind a named model role, e.g. `--model-role grader=mockllm/model` (mirrors "
+                "Inspect's own flag; also accepts `grader={model: X, temperature: 0}`). The "
+                "**grader** role is the one vigilAI uses: it is the LLM judge that "
+                "`--task-arg <task>:judge=true` adds as a second scorer. Leave it unbound and the "
+                "judge uses its pinned grader (`vigilai.tasks.judge.JUDGE_GRADER` at "
+                "temperature 0, seed 42), which is what a real run wants. Bind it to run the "
+                "judge pipeline offline against `mockllm/model`, or to swap in a local grader."
+            ),
+        ),
+    ] = [],
     generate_args: Annotated[
         list[str],
         typer.Option(
@@ -362,6 +378,9 @@ def eval_command(
     # Parse args
     parsed_task_args = parse_task_args(task_args, task_config)
     parsed_model_args = parse_cli_config(model_args, model_config)
+    # Inspect's own parser, so `--model-role grader=mockllm/model` and the
+    # `grader={model: …, temperature: 0}` dict form behave exactly as they do in `inspect eval`.
+    parsed_model_roles = parse_model_role_cli_args(tuple(model_role) or None)
     parsed_generate_args = parse_cli_config(generate_args, generate_config)
     parsed_limit = parse_samples_limit(limit)
     parsed_sample_id = parse_sample_id(sample_id)
@@ -393,6 +412,7 @@ def eval_command(
             retry_cleanup=retry_cleanup,
             model_base_url=model_base_url,
             model_args=parsed_model_args,
+            model_roles=parsed_model_roles or None,
             limit=parsed_limit,
             sample_id=parsed_sample_id,
             sample_shuffle=sample_shuffle,

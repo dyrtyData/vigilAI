@@ -27,13 +27,19 @@ from __future__ import annotations
 
 from inspect_ai import Task
 from inspect_ai import task
+from inspect_ai.scorer import Scorer
 from inspect_ai.solver import generate
 from inspect_ai.solver import Solver
 from inspect_ai.solver import system_message
 
 from vigilai.tasks.explanation_quality.dataset import explanation_scenarios_dataset
+from vigilai.tasks.explanation_quality.rubric import EXPLANATION_JUDGE_INSTRUCTIONS
 from vigilai.tasks.explanation_quality.rubric import EXPLANATION_RUBRIC
 from vigilai.tasks.explanation_quality.rubric import rubric_scorer
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import judge_scorer
 
 
 # Compliant-explanation exemplar (design discussion §5). Shows all 6 rubric elements with
@@ -66,7 +72,9 @@ Explanation:
     brazil_article="Art. 6, I",
     brazil_scope="high_risk",
 )
-def explanation_quality(num_fewshot: int = 1, split: str = "all") -> Task:
+def explanation_quality(
+    num_fewshot: int = 1, split: str = "all", judge: bool = False
+) -> Task:
     """Brazil PL 2338/2023 Art. 6, I explanation-quality task.
 
     Prompts the model to explain high-stakes automated decisions and scores each explanation
@@ -98,14 +106,41 @@ def explanation_quality(num_fewshot: int = 1, split: str = "all") -> Task:
             Phase 6 LLM judge grades. Pass it as
             ``--task-arg explanation_quality:split=held_out`` — the CLI's arg format is
             ``task_name:key=value``, and a bare ``key=value`` is silently ignored.
+        judge: Add the **LLM-judge second scorer** alongside the deterministic one
+            (``--task-arg explanation_quality:judge=true``). Both grade the same samples in the
+            same run and are reported independently, so the deterministic↔judge delta quantifies
+            how much of the score is keyword surface (reviewer ask #2). The grader is
+            :data:`~vigilai.tasks.judge.JUDGE_GRADER` at ``temperature=0, seed=42``, resolved at
+            scoring time and overridable by binding the ``grader`` model role — which is how the
+            tests grade with ``mockllm/model`` and no API key. Intended for
+            ``split=held_out`` (the slice no cue list was tuned against), but running it on the
+            full set as well is cheap and Resolution 1 asks for both, always labelled.
     """
     solver: list[Solver] = []
     if num_fewshot >= 1:
         solver.append(system_message(FEW_SHOT_EXAMPLE))
     solver.append(generate())
 
+    # A list of scorers, each reported independently in ``EvalResults.scores``. The deterministic
+    # scorer stays **first**, but nothing may depend on that: ``brazil_report`` selects the
+    # headline score by scorer *name*, because an index into a two-element list is an
+    # order-dependent headline.
+    scorers: list[Scorer] = [rubric_scorer(EXPLANATION_RUBRIC)]
+    if judge:
+        # Every argument is passed explicitly so it lands in ``EvalScore.params`` in the log
+        # header: the grader id, its two config keys, and the exact instructions it applied are
+        # then reproducible from the artifact alone.
+        scorers.append(
+            judge_scorer(
+                instructions=EXPLANATION_JUDGE_INSTRUCTIONS,
+                grader=JUDGE_GRADER,
+                grader_temperature=JUDGE_GRADER_TEMPERATURE,
+                grader_seed=JUDGE_GRADER_SEED,
+            )
+        )
+
     return Task(
         dataset=explanation_scenarios_dataset(split),
         solver=solver,
-        scorer=rubric_scorer(EXPLANATION_RUBRIC),
+        scorer=scorers,
     )

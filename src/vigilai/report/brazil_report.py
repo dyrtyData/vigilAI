@@ -68,7 +68,37 @@ Gap-flagging items reach the report through the **task decorator** (``brazil_gap
 through ``Score.metadata``: sample scores are not in the log header, and
 :func:`build_brazil_report` is header-only by design. The overlay section names them so a low
 sector score reads as a regulatory finding — the item is one no Brazilian instrument imposes —
-rather than only as a model failure.
+rather than only as a model failure. Since Phase 6 the task **also** carries
+``brazil_gap_items_by_sector``, so the JSON view's per-sector list is per-sector rather than the
+whole set repeated in every entry (Resolution 11 — see :func:`_gap_items_by_sector_from_attribs`).
+
+The LLM-judge second scorer (iteration 2, Phase 6)
+--------------------------------------------------
+
+The three Brazil rubric tasks can run a **second scorer** — an LLM judge — alongside their
+deterministic one (``--task-arg <task>:judge=true``). Inspect reports each scorer independently in
+``EvalResults.scores``, so one log carries two scores for the same samples. That breaks an
+assumption this module used to make, and the fix is the load-bearing part of Phase 6:
+
+* **Scores are selected by scorer *name*, never by list position.** ``_task_score_from_log`` read
+  ``log.results.scores[0]`` — "a task usually has a single score" — which turns the headline into
+  whatever scorer happens to be first. :func:`_select_score` picks the deterministic scorer for
+  ``score`` / ``stderr`` / the sector metrics and the judge for ``judge_score`` / ``judge_stderr``,
+  so scorer order in the task definition cannot move a published number. A single-scorer log
+  resolves exactly as it did before (the judge names are the only ones ever excluded), which is
+  what keeps every pre-Phase-6 log reporting identically.
+* **The two columns are different measures on the same 0-1 range.** The deterministic scorers
+  report ``mean`` — the mean *fraction of rubric elements* their cue detectors find. The judge is
+  ``model_graded_qa``, decorated ``@scorer(metrics=[accuracy(), stderr()])``, so it reports
+  ``accuracy`` — the *fraction of replies graded C*, i.e. those where the grader judged **every**
+  element a substantive procedural commitment (a ``P`` counts half). They are not two estimates of
+  one quantity, so :attr:`TaskScore.judge_delta` is a **delta between two stated measures**, not an
+  error and not a disagreement rate. Every renderer says so next to the number.
+* **The delta's error bar is an upper bound.** Both scorers grade the *same samples in the same
+  run*, so their errors are positively correlated and adding them in quadrature over-states the
+  uncertainty. That is the conservative direction and it is stated wherever the number appears —
+  the opposite of the ``bbq_brazil`` stderr, which is a lower bound. (The EU↔Brazil delta in
+  :attr:`SideBySideRow.delta_stderr` is genuinely independent and needs no such caveat.)
 """
 
 from __future__ import annotations
@@ -76,6 +106,7 @@ from __future__ import annotations
 import html
 import json
 import math
+import re
 from dataclasses import dataclass
 from datetime import date
 from dataclasses import field
@@ -83,6 +114,7 @@ from functools import lru_cache
 from typing import Any
 
 from inspect_ai.log import EvalLog
+from inspect_ai.log import EvalScore
 from inspect_ai.log import list_eval_logs
 from inspect_ai.log import read_eval_log
 
@@ -176,6 +208,49 @@ _SECTOR_STDERR_PREFIX = "stderr_"
 # (obligations no Brazilian instrument imposes). Read from the log header so the aggregator stays
 # header-only; absent from pre-Phase-4 logs, in which case the overlay note simply omits the list.
 _GAP_ITEMS_ATTRIB = "brazil_gap_items"
+
+# The same ids **partitioned by sector**, as ``sector:id|id;sector:id`` (Phase 6, Resolution 11).
+# The flat attrib above cannot say *which* sector a gap item belongs to, so the JSON view repeated
+# the whole set in every sector entry — ``health_anvisa``, which has no gap item, listed five.
+# A sector with no gap item is simply absent from this string, which is exactly the fix.
+# Pre-Phase-6 logs do not carry it; those fall back to the flat list, i.e. to their own recorded
+# behaviour, because the per-sector information genuinely is not in them.
+_GAP_ITEMS_BY_SECTOR_ATTRIB = "brazil_gap_items_by_sector"
+_GAP_SECTOR_SEPARATOR = ";"
+_GAP_SECTOR_FIELD_SEPARATOR = ":"
+_GAP_ID_SEPARATOR = "|"
+
+# Scorer names, for name-based score selection (Phase 6). Kept as literals rather than imported
+# from the task modules: the report must not depend on the task package (Resolution 6 plans to
+# extract a jurisdiction-neutral ``report`` command from this file), and the same discipline
+# already applies to ``_GAP_ITEMS_ATTRIB``. ``tests/test_brazil_report.py`` pins each string
+# against the constant it mirrors, so the two cannot drift silently.
+#
+# ``_DETERMINISTIC_SCORERS`` is a *preference*, not a filter: an upstream COMPL-AI task scored by
+# ``match`` / ``choice`` is not in it and must still resolve, so the fallback is "the first score
+# that is not the judge". Naming the three Brazil scorers explicitly means a future task that adds
+# a third scorer of its own still resolves the intended headline rather than the first one.
+_DETERMINISTIC_SCORERS: tuple[str, ...] = (
+    "rubric_scorer",
+    "contestation_scorer",
+    "aia_checklist_scorer",
+)
+
+# The registry name of ``vigilai.tasks.judge.judge_scorer`` — the one score that is never a
+# headline.
+_JUDGE_SCORERS: tuple[str, ...] = ("judge_scorer",)
+
+# The Inspect model role the judge grader is bound to (``vigilai.tasks.judge.JUDGE_ROLE``). When a
+# run bound it, the log header records the model **actually** used; otherwise the grader is the one
+# the judge scorer's own params declare.
+_JUDGE_ROLE = "grader"
+
+# ``EvalScore.params`` keys the judge scorer records, so the grader is reproducible from the
+# artifact alone even when no role was bound (the normal case for a real run — the CLI has no
+# ``--model-role`` flag, and the scorer resolves its pinned default at scoring time).
+_JUDGE_PARAM_GRADER = "grader"
+_JUDGE_PARAM_TEMPERATURE = "grader_temperature"
+_JUDGE_PARAM_SEED = "grader_seed"
 
 # Minimum sample count for a reportable standard error. Inspect's ``stderr()`` returns a
 # *placeholder* ``0`` when it has fewer than two observations to estimate from
@@ -326,6 +401,114 @@ def _gap_items_from_attribs(task_attribs: dict[str, Any]) -> tuple[str, ...]:
     return tuple(part.strip() for part in raw.split(",") if part.strip())
 
 
+def _gap_items_by_sector_from_attribs(
+    task_attribs: dict[str, Any],
+) -> dict[str, tuple[str, ...]]:
+    """Read the **per-sector** gap-item ids (``brazil_gap_items_by_sector``) — Resolution 11.
+
+    Format: ``sector:id|id;sector:id``. A sector with no gap item is absent from the string, and
+    the caller must therefore treat "the task declared a mapping but not this sector" as *no gap
+    items in this sector* — that distinction is the whole fix, because the previous flat attrib
+    made ``health_anvisa`` (which has none) list all five.
+
+    Returns an empty dict for a task that declares none and for a **pre-Phase-6 log**; the caller
+    falls back to the flat list there, since the per-sector split genuinely is not recorded in
+    those logs and inventing one would be worse than repeating the old, documented imprecision.
+    """
+    raw = task_attribs.get(_GAP_ITEMS_BY_SECTOR_ATTRIB)
+    if not isinstance(raw, str) or not raw.strip():
+        return {}
+    by_sector: dict[str, tuple[str, ...]] = {}
+    for entry in raw.split(_GAP_SECTOR_SEPARATOR):
+        entry = entry.strip()
+        if not entry or _GAP_SECTOR_FIELD_SEPARATOR not in entry:
+            continue
+        sector, _, ids = entry.partition(_GAP_SECTOR_FIELD_SEPARATOR)
+        sector = sector.strip()
+        items = tuple(
+            part.strip() for part in ids.split(_GAP_ID_SEPARATOR) if part.strip()
+        )
+        if sector and items:
+            by_sector[sector] = items
+    return by_sector
+
+
+def _select_score(scores: list[EvalScore], *, judge: bool) -> EvalScore | None:
+    """Pick one of a task's scores **by scorer name** — never by position in the list.
+
+    Since Phase 6 a task may declare two scorers (the deterministic one and the LLM judge), and
+    Inspect reports each independently in ``EvalResults.scores``. Indexing that list — which is
+    what this module used to do, with the comment *"a task usually has a single score"* — makes
+    the headline score depend on the order the scorers happen to be declared in. It is a silent
+    failure: the report would render a judge accuracy in the per-article compliance table with no
+    error anywhere.
+
+    Resolution order for the deterministic score:
+
+    1. a score named by :data:`_DETERMINISTIC_SCORERS` (the three Brazil scorers);
+    2. otherwise the first score that is **not** a judge — which is what keeps every upstream
+       COMPL-AI task (``match``, ``choice``, and the rest) resolving exactly as before, without
+       this module having to enumerate them.
+
+    The judge is resolved by :data:`_JUDGE_SCORERS` alone: there is no "first non-deterministic"
+    fallback, because guessing which of several unknown scorers is a judge would be worse than
+    reporting none.
+
+    Args:
+        scores: ``log.results.scores`` — a list of ``EvalScore``.
+        judge: ``True`` to select the judge score, ``False`` for the deterministic headline.
+
+    Returns:
+        The selected ``EvalScore``, or ``None`` when the run has none of that kind.
+    """
+    if judge:
+        return next((s for s in scores if s.name in _JUDGE_SCORERS), None)
+    preferred = next((s for s in scores if s.name in _DETERMINISTIC_SCORERS), None)
+    if preferred is not None:
+        return preferred
+    return next((s for s in scores if s.name not in _JUDGE_SCORERS), None)
+
+
+def _judge_grader_from_log(
+    log: EvalLog, judge_score: EvalScore | None
+) -> tuple[str | None, str | None]:
+    """Resolve ``(grader model id, grader config)`` for the judge table header.
+
+    "Reproducible from the artifact alone" is the requirement, and there are two places the answer
+    can live, so both are read in the order that makes the rendered line *true*:
+
+    1. **The bound ``grader`` model role**, when the run bound one (``log.eval.model_roles``). That
+       is the model that actually graded — including in the test suite, where it is
+       ``mockllm/model``, and a header claiming Opus had graded a mock run would be a lie in the
+       published artifact.
+    2. **The judge scorer's own params**, otherwise. A real run leaves the role unbound (the CLI
+       has no ``--model-role`` flag) and the scorer resolves its pinned default, which the params
+       record verbatim.
+
+    The config always comes from the params, because that is the config the scorer *applies*
+    (``get_model(role=…, config=…)``) whether or not a role was bound.
+    """
+    params: dict[str, Any] = dict(judge_score.params or {}) if judge_score else {}
+
+    grader: str | None = None
+    roles = log.eval.model_roles or {}
+    role_model = roles.get(_JUDGE_ROLE)
+    if role_model is not None:
+        grader = str(role_model.model)
+    elif isinstance(params.get(_JUDGE_PARAM_GRADER), str):
+        grader = str(params[_JUDGE_PARAM_GRADER])
+
+    config: str | None = None
+    settings = [
+        f"{key}={params[key]}"
+        for key in (_JUDGE_PARAM_TEMPERATURE, _JUDGE_PARAM_SEED)
+        if params.get(key) is not None
+    ]
+    if settings:
+        config = ", ".join(settings)
+    return grader, config
+
+
 def _pooled_stderr(stderrs: list[float | None]) -> float | None:
     """Standard error of the *mean* of ``k`` independent estimates: ``sqrt(Σ seᵢ²) / k``.
 
@@ -362,6 +545,23 @@ class TaskScore:
             Empty for every task that declares none (all of them but ``aia_checklist``).
         gap_items: Ids of this task's gap-flagging checklist items, from the
             ``brazil_gap_items`` decorator attrib. Empty for every other task.
+        gap_items_by_sector: The same ids partitioned by sector, from
+            ``brazil_gap_items_by_sector`` (Phase 6 / Resolution 11). Empty for a task that
+            declares none **and** for a pre-Phase-6 log, where the split is not recorded.
+        judge_score: The LLM judge's headline value for this task (Inspect ``accuracy`` — the
+            fraction of replies graded ``C``), or ``None`` when the run had no judge scorer.
+        judge_stderr: Standard error of ``judge_score``, suppressed below two samples exactly as
+            ``stderr`` is.
+        judge_metric_name: Which metric ``judge_score`` came from — ``"accuracy"``, and the
+            reason the judge column is a *different measure* rather than a second estimate of
+            ``score``.
+        judge_grader: The grader model id, from the bound ``grader`` role if the run bound one,
+            else from the judge scorer's recorded params.
+        judge_grader_config: The grader sampling config as recorded by the scorer, e.g.
+            ``"grader_temperature=0.0, grader_seed=42"``.
+        split: The dataset slice the run used (``task_args["split"]``) — ``"held_out"`` for the
+            uncontaminated judge slice, ``"all"`` for the full set. Resolution 1 requires the two
+            to be reported separately and **always labelled**, so the judge table shows it.
     """
 
     task: str
@@ -376,11 +576,54 @@ class TaskScore:
     stderr: float | None = None
     sector_scores: dict[str, tuple[float, float | None]] = field(default_factory=dict)
     gap_items: tuple[str, ...] = ()
+    gap_items_by_sector: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    judge_score: float | None = None
+    judge_stderr: float | None = None
+    judge_metric_name: str | None = None
+    judge_grader: str | None = None
+    judge_grader_config: str | None = None
+    split: str | None = None
 
     @property
     def is_brazil(self) -> bool:
         """True if this task is mapped to a Brazil article (i.e. appears in the report body)."""
         return self.brazil_article is not None
+
+    @property
+    def has_judge(self) -> bool:
+        """True if a judge scorer ran on this task (so it belongs in the judge table)."""
+        return self.judge_score is not None
+
+    @property
+    def judge_delta(self) -> float | None:
+        """``score - judge_score`` — the deterministic reading minus the judge's.
+
+        **Positive** means the deterministic detector credits more than the judge does, i.e. the
+        residual keyword surface reviewer ask #2 is about. Negative means the judge credits
+        substance the cue lists miss, which is equally publishable and points at the *scorer*
+        rather than the model.
+
+        ``None`` unless both sides are present. The two are **different measures on the same 0-1
+        range** — mean fraction of rubric elements detected, versus fraction of replies graded
+        fully compliant — so this is a delta between two stated measures, never an error.
+        """
+        if self.score is None or self.judge_score is None:
+            return None
+        return self.score - self.judge_score
+
+    @property
+    def judge_delta_stderr(self) -> float | None:
+        """Standard error of :attr:`judge_delta` — ``sqrt(se² + judge_se²)``, an **upper bound**.
+
+        Unlike :attr:`SideBySideRow.delta_stderr`, whose two sides are independent runs, both
+        scorers here grade the *same samples in the same run*. Their errors are therefore
+        positively correlated and adding them in quadrature over-states the uncertainty. That is
+        the conservative direction — it can only make a delta look less significant than it is —
+        and the renderers say so rather than presenting it as exact.
+        """
+        if self.judge_delta is None or self.stderr is None or self.judge_stderr is None:
+            return None
+        return math.sqrt(self.stderr**2 + self.judge_stderr**2)
 
 
 @dataclass
@@ -569,6 +812,17 @@ class BrazilComplianceReport:
                 return group
         return None
 
+    @property
+    def judge_rows(self) -> list[TaskScore]:
+        """The tasks a judge scorer ran on, sorted by task name — the judge table's rows.
+
+        Empty for every run without ``--task-arg <task>:judge=true``, in which case the section is
+        omitted entirely rather than rendered blank (the same discipline the sector overlay uses).
+        """
+        return sorted(
+            (t for t in self.brazil_task_scores if t.has_judge), key=lambda t: t.task
+        )
+
     def row_for(self, brazil_task: str) -> SideBySideRow | None:
         """Return the side-by-side row for a Brazil task name, if present."""
         for row in self.side_by_side:
@@ -642,6 +896,10 @@ class BrazilComplianceReport:
                     "sector": group.sector,
                     "mean_score": group.mean_score,
                     "mean_stderr": group.mean_stderr,
+                    # Per sector since Phase 6 (Resolution 11). Before that this repeated every
+                    # gap id in every entry, so a consumer could not tell that ``health_anvisa``
+                    # has none. A pre-Phase-6 log still shows the old repeated list, because the
+                    # split is not recorded in it.
                     "gap_items": list(group.gap_items),
                     "tasks": [
                         {"task": task, "score": value, "stderr": se}
@@ -649,6 +907,27 @@ class BrazilComplianceReport:
                     ],
                 }
                 for group in self.sector_groups
+            ],
+            "deterministic_vs_judge": [
+                {
+                    "task": t.task,
+                    "split": t.split,
+                    "samples": t.total_samples,
+                    "deterministic_score": t.score,
+                    "deterministic_stderr": t.stderr,
+                    "deterministic_metric": t.metric_name,
+                    "judge_score": t.judge_score,
+                    "judge_stderr": t.judge_stderr,
+                    "judge_metric": t.judge_metric_name,
+                    "judge_grader": t.judge_grader,
+                    "judge_grader_config": t.judge_grader_config,
+                    "delta": t.judge_delta,
+                    # sqrt(se² + judge_se²) — an **upper bound**: the two scorers grade the same
+                    # samples, so their errors are positively correlated.
+                    "delta_stderr": t.judge_delta_stderr,
+                    "delta_stderr_is_upper_bound": True,
+                }
+                for t in self.judge_rows
             ],
         }
 
@@ -767,6 +1046,80 @@ def _render_sector_markdown(report: BrazilComplianceReport) -> list[str]:
     return lines
 
 
+# The judge section's standing explanation. Shared verbatim by the Markdown and HTML renderers
+# (modulo markup) so the two can never drift, and worded so the delta cannot be read as an error
+# rate, a disagreement rate, or a correction to the deterministic score.
+_JUDGE_SECTION_TITLE = "Deterministic vs. LLM-judge (held-out)"
+
+_JUDGE_CAVEAT_PARTS: tuple[str, ...] = (
+    "Reviewer ask #2: how much of a rubric score is **keyword surface** and how much is genuine "
+    "procedural reasoning. The deterministic scorer detects whether each rubric element's cues "
+    "are present; the LLM judge is asked, element by element, whether the reply establishes each "
+    "one as a **substantive procedural commitment** — a route the affected person could actually "
+    "take, in whatever words — and grades a reply `C` only when every element clears that bar.",
+    "**The two columns are different measures on the same 0-1 range, not two estimates of one "
+    "quantity.** Deterministic is Inspect's `mean`: the mean *fraction of rubric elements* "
+    "detected. Judge is Inspect's `accuracy`: the *fraction of replies graded `C`* (a `P` counts "
+    "half). So Δ is a signed difference between two **stated measures** — a positive Δ means the "
+    "detector credits more than the judge does, a negative Δ means the judge credits substance "
+    "the cue lists miss. It is not an error, not a disagreement rate, and not a correction.",
+    "**Δ's error bar is an upper bound.** Both scorers grade the *same samples in the same run*, "
+    "so their errors are positively correlated and `sqrt(se² + judge_se²)` over-states the "
+    "uncertainty. That is the conservative direction — it can only make a Δ look less significant "
+    "than it is.",
+    "Per-sample agreement (mean |Δ|, rank correlation, direction disagreements) needs the sample "
+    "records, which this header-only aggregator deliberately never loads; it arrives in Phase 7.",
+)
+
+
+def _judge_grader_line(report: BrazilComplianceReport) -> str | None:
+    """The grader id + config line, so the judge numbers are reproducible from the artifact alone.
+
+    Reads what the rows actually recorded rather than a constant, so a run graded by something
+    other than the pinned grader — a mock in the test suite, a future local grader — says so.
+    Multiple distinct graders in one run are all listed rather than silently collapsed.
+    """
+    graders = sorted({t.judge_grader for t in report.judge_rows if t.judge_grader})
+    configs = sorted({t.judge_grader_config for t in report.judge_rows if t.judge_grader_config})
+    if not graders:
+        return None
+    grader_str = ", ".join(f"`{g}`" for g in graders)
+    if configs:
+        return f"**Grader:** {grader_str} at `{'; '.join(configs)}`, bound as model role `grader`."
+    return f"**Grader:** {grader_str}, bound as model role `grader`."
+
+
+def _render_judge_markdown(report: BrazilComplianceReport) -> list[str]:
+    """The 'Deterministic vs. LLM-judge' Markdown section, or nothing when no judge ran."""
+    rows = report.judge_rows
+    if not rows:
+        return []
+    lines: list[str] = []
+    lines.append(f"## {_JUDGE_SECTION_TITLE}")
+    lines.append("")
+    grader_line = _judge_grader_line(report)
+    if grader_line is not None:
+        lines.append(grader_line)
+        lines.append("")
+    for part in _JUDGE_CAVEAT_PARTS:
+        lines.append(part)
+        lines.append("")
+    lines.append(
+        "| Task | Split | Samples | Deterministic (mean element fraction) ± se | "
+        "LLM-judge (accuracy: fraction graded C) ± se | Δ (deterministic − judge) ± se |"
+    )
+    lines.append("|---|---|---|---|---|---|")
+    for row in rows:
+        lines.append(
+            f"| `{row.task}` | {row.split or '—'} | {row.total_samples} | "
+            f"{_fmt_score_se(row.score, row.stderr)} | "
+            f"{_fmt_score_se(row.judge_score, row.judge_stderr)} | "
+            f"{_fmt_delta_se(row.judge_delta, row.judge_delta_stderr)} |"
+        )
+    lines.append("")
+    return lines
+
+
 def _render_markdown(report: BrazilComplianceReport) -> str:
     lines: list[str] = []
     lines.append("# Brazil PL 2338/2023 — Compliance Report")
@@ -850,6 +1203,9 @@ def _render_markdown(report: BrazilComplianceReport) -> str:
     # -- Sector overlay section ----------------------------------------------------------
     lines.extend(_render_sector_markdown(report))
 
+    # -- Deterministic ↔ LLM-judge section -----------------------------------------------
+    lines.extend(_render_judge_markdown(report))
+
     # -- Coverage map section (9-requirement breadth) -----------------------------------
     lines.append("## Brazil compliance coverage map (9 requirements)")
     lines.append("")
@@ -913,6 +1269,22 @@ def _delta_band(value: float | None) -> str:
 def _esc(value: Any) -> str:
     """HTML-escape any dynamic value (quotes included) for safe inline insertion."""
     return html.escape("" if value is None else str(value), quote=True)
+
+
+# The three Markdown conventions the shared prose blocks use. Applied **after** escaping, so the
+# text is safe first and marked up second — a note is authored once and rendered in both views
+# rather than maintained twice.
+_MD_CODE_RE = re.compile(r"`([^`]+)`")
+_MD_BOLD_RE = re.compile(r"\*\*([^*]+)\*\*")
+_MD_EM_RE = re.compile(r"\*([^*]+)\*")
+
+
+def _md_note_to_html(text: str) -> str:
+    """Escape a shared prose block, then restore its ``**bold**`` / ``*em*`` / ``code`` markup."""
+    escaped = _esc(text)
+    escaped = _MD_CODE_RE.sub(r"<code>\1</code>", escaped)
+    escaped = _MD_BOLD_RE.sub(r"<strong>\1</strong>", escaped)
+    return _MD_EM_RE.sub(r"<em>\1</em>", escaped)
 
 
 _HTML_STYLE = """
@@ -1130,6 +1502,51 @@ def _render_sector_section(report: BrazilComplianceReport) -> list[str]:
     return parts
 
 
+def _render_judge_table(report: BrazilComplianceReport) -> list[str]:
+    rows: list[str] = []
+    rows.append("<table>")
+    rows.append(
+        "<thead><tr>"
+        "<th>Task</th><th>Split</th><th class='score'>Samples</th>"
+        "<th class='score'>Deterministic<br><span class='se'>mean element fraction</span></th>"
+        "<th class='score'>LLM-judge<br><span class='se'>accuracy: fraction graded C</span></th>"
+        "<th class='score'>Δ (deterministic − judge)</th>"
+        "</tr></thead>"
+    )
+    rows.append("<tbody>")
+    for row in report.judge_rows:
+        rows.append(
+            "<tr>"
+            f"<td><code class='task'>{_esc(row.task)}</code></td>"
+            f"<td>{_esc(row.split or '—')}</td>"
+            f"<td class='score'>{row.total_samples}</td>"
+            f"<td class='score'>{_html_badge(row.score, _score_band(row.score))}"
+            f"{_html_se(row.stderr)}</td>"
+            f"<td class='score'>{_html_badge(row.judge_score, _score_band(row.judge_score))}"
+            f"{_html_se(row.judge_stderr)}</td>"
+            f"<td class='score'>{_html_delta_badge(row.judge_delta)}"
+            f"{_html_se(row.judge_delta_stderr)}</td>"
+            "</tr>"
+        )
+    rows.append("</tbody></table>")
+    return rows
+
+
+def _render_judge_section(report: BrazilComplianceReport) -> list[str]:
+    """The 'Deterministic vs. LLM-judge' HTML section, or nothing when no judge ran."""
+    if not report.judge_rows:
+        return []
+    parts: list[str] = []
+    parts.append(f"<h2>{_esc(_JUDGE_SECTION_TITLE)}</h2>")
+    grader_line = _judge_grader_line(report)
+    if grader_line is not None:
+        parts.append(f'<p class="note">{_md_note_to_html(grader_line)}</p>')
+    for part in _JUDGE_CAVEAT_PARTS:
+        parts.append(f'<p class="note">{_md_note_to_html(part)}</p>')
+    parts.extend(_render_judge_table(report))
+    return parts
+
+
 def _render_coverage_table(report: BrazilComplianceReport) -> list[str]:
     rows: list[str] = []
     rows.append("<table>")
@@ -1238,6 +1655,9 @@ def _render_html(report: BrazilComplianceReport) -> str:
     # -- Sector overlay section ----------------------------------------------------------
     parts.extend(_render_sector_section(report))
 
+    # -- Deterministic ↔ LLM-judge section -----------------------------------------------
+    parts.extend(_render_judge_section(report))
+
     # -- Coverage map section (9-requirement breadth) -----------------------------------
     parts.append("<h2>Brazil compliance coverage map (9 requirements)</h2>")
     parts.append(
@@ -1274,14 +1694,23 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
     metric_name: str | None = None
     stderr_value: float | None = None
     sector_scores: dict[str, tuple[float, float | None]] = {}
+    judge_value: float | None = None
+    judge_metric_name: str | None = None
+    judge_stderr_value: float | None = None
+    judge_grader: str | None = None
+    judge_grader_config: str | None = None
     total_samples = 0
     if log.results is not None:
         total_samples = log.results.total_samples
-        if log.results.scores:
-            # A task usually has a single score; take the first (its headline metric). The
-            # standard error is read from the *same* metrics dict — a sibling of the point
+        # **By name, never by index.** A judge run has two scores, so ``scores[0]`` would make the
+        # headline depend on the order the task happens to declare its scorers in — silently, with
+        # a judge accuracy landing in the per-article compliance table. See ``_select_score``.
+        deterministic = _select_score(list(log.results.scores), judge=False)
+        judge = _select_score(list(log.results.scores), judge=True)
+        if deterministic is not None:
+            # The standard error is read from the *same* metrics dict — a sibling of the point
             # estimate, not a competing one, and so are the per-sector grouped metrics.
-            metrics = log.results.scores[0].metrics
+            metrics = deterministic.metrics
             metric_name, score_value = _headline_metric(metrics)
             stderr_value = _stderr_metric(metrics)
             sector_scores = _sector_metrics(metrics)
@@ -1304,6 +1733,18 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
                 sector_scores = {
                     sector: (value, None) for sector, (value, _) in sector_scores.items()
                 }
+        if judge is not None:
+            judge_metric_name, judge_value = _headline_metric(judge.metrics)
+            judge_stderr_value = _stderr_metric(judge.metrics)
+            if total_samples < _MIN_SAMPLES_FOR_STDERR:
+                judge_stderr_value = None
+            judge_grader, judge_grader_config = _judge_grader_from_log(log, judge)
+
+    # The dataset slice the run used. Resolution 1 requires held-out and full-set judge agreement
+    # to be reported separately and always labelled, so the label has to come off the artifact
+    # rather than off the operator's memory of which command produced it.
+    task_args = dict(spec.task_args or {})
+    split = task_args.get("split")
 
     return TaskScore(
         task=task_name,
@@ -1318,6 +1759,13 @@ def _task_score_from_log(log: EvalLog) -> TaskScore:
         stderr=stderr_value,
         sector_scores=sector_scores,
         gap_items=_gap_items_from_attribs(attribs),
+        gap_items_by_sector=_gap_items_by_sector_from_attribs(attribs),
+        judge_score=judge_value,
+        judge_stderr=judge_stderr_value,
+        judge_metric_name=judge_metric_name,
+        judge_grader=judge_grader,
+        judge_grader_config=judge_grader_config,
+        split=str(split) if isinstance(split, str) else None,
     )
 
 
@@ -1412,6 +1860,13 @@ def _build_sector_groups(scores: list[TaskScore]) -> list[SectorGroup]:
 
     A task with no ``grouped()`` metrics contributes nothing, so a run without ``aia_checklist``
     produces an empty list and the overlay section is omitted rather than rendered blank.
+
+    **Gap items are per sector since Phase 6 (Resolution 11).** A task that recorded
+    ``brazil_gap_items_by_sector`` contributes only *that sector's* ids — and contributes **none**
+    for a sector absent from its mapping, which is the fix: ``health_anvisa`` has no gap item and
+    used to list all five, because the only thing in the log header was one flat string. A
+    pre-Phase-6 log has no mapping and falls back to the flat list, reproducing its own recorded
+    behaviour rather than inventing a split that is not in it.
     """
     groups: dict[str, SectorGroup] = {}
     gap_by_sector: dict[str, set[str]] = {}
@@ -1419,7 +1874,11 @@ def _build_sector_groups(scores: list[TaskScore]) -> list[SectorGroup]:
         for sector, (value, se) in sorted(task.sector_scores.items()):
             group = groups.setdefault(sector, SectorGroup(sector=sector))
             group.tasks.append((task.task, value, se))
-            gap_by_sector.setdefault(sector, set()).update(task.gap_items)
+            if task.gap_items_by_sector:
+                sector_gaps: tuple[str, ...] = task.gap_items_by_sector.get(sector, ())
+            else:
+                sector_gaps = task.gap_items
+            gap_by_sector.setdefault(sector, set()).update(sector_gaps)
     for sector, group in groups.items():
         group.gap_items = tuple(sorted(gap_by_sector.get(sector, set())))
     return [groups[sector] for sector in sorted(groups)]

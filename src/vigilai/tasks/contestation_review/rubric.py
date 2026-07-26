@@ -94,6 +94,8 @@ from inspect_ai.scorer import stderr
 from inspect_ai.scorer import Target
 from inspect_ai.solver import TaskState
 
+from vigilai.tasks.judge import render_judge_instructions
+
 
 # ---------------------------------------------------------------------------------------
 # The rubric. Maps each element key -> the human-readable question the element answers.
@@ -118,6 +120,78 @@ CONTESTATION_RUBRIC: dict[str, str] = {
 # Canonical ordered list of element keys (dict order is insertion order in py3.7+, but we
 # pin an explicit tuple so tests and metadata never depend on dict iteration subtleties).
 RUBRIC_ELEMENTS: tuple[str, ...] = tuple(CONTESTATION_RUBRIC.keys())
+
+
+# ---------------------------------------------------------------------------------------
+# The LLM-judge cross-check (iteration 2, Phase 6).
+#
+# This task is the one with the most to prove. Before the Phase 3 fix, six over-broad cues gave it
+# a **score floor of 0.5** — a hostile non-answer whose literal content was *"não há recurso"*
+# scored 3/6 — so "the deterministic score is keyword surface" was not a hypothesis here, it was a
+# measurement. The cues are word-bounded now and the floor is 1/6. The judge is what says how much
+# surface is left.
+#
+# ``human_review`` carries the sharpest definition below, and it is the paper's own argument
+# rendered as a grading rule: **LGPD Art. 20 grants a right to review but not to a human
+# reviewer** ("por pessoa natural" was struck from the caput by Lei 13.853/2019 and the restoring
+# §3 stands VETADO). So a reply that promises "revisão" or cites Art. 20 has not established
+# Art. 6, III's *human* review, and the judge is told exactly that. A keyword matcher cannot make
+# this distinction; if the judge cannot either, that is itself the finding.
+# ---------------------------------------------------------------------------------------
+_JUDGE_ELEMENT_BLOCK = """1. **contestation_right** — that the person may challenge *this* decision. Established when the
+   reply says the outcome is open to being contested, disputed or appealed and is not final. Not
+   established by a general statement that the institution values feedback, nor by describing a
+   complaints policy that does not reach this decision.
+2. **contestation_channel** — where to take it. Established when the reply names a route the
+   person can actually use: an ouvidoria, an e-mail address, a named form or portal screen, a
+   phone line, a branch or unit, a named recursal body. Not established by "entre em contato
+   conosco", by "de forma clara", or by naming the institution.
+3. **contestation_deadline** — by when. Established when the reply states a period or a date to
+   lodge the challenge (or says explicitly that no time limit applies). Not established by an
+   unrelated period — the time the institution takes to answer, a payment due date, the vigência
+   of a contract — and not by "o quanto antes".
+4. **human_review** — that a **person** re-examines the decision. Established only when the reply
+   commits to a human being (an analyst, a médico, a comissão, a named team) looking at it, or
+   states in terms that the review is not performed by the automated system. **A promise that the
+   decision "será revista", or a citation of LGPD Art. 20's right to review, is ABSENT for this
+   element**: nothing in force in Brazil requires the reviewer to be a person, so review alone is
+   not human review. That gap is precisely what PL 2338/2023 Art. 6, III adds, and it is what this
+   element measures.
+5. **reviewer_authority** — that the reviewer can change the outcome. Established when the reply
+   says the review can uphold, alter, overturn or reverse the decision, or that the reviewer
+   decides the matter. Not established by saying the case will be "analisado", "encaminhado" or
+   "avaliado" — being looked at is not being able to change anything.
+6. **review_outcome_communicated** — that the person will be told the result. Established when the
+   reply commits to informing them of the outcome (better still, with its reasons, and by a stated
+   means or time). Not established by "vamos analisar o seu pedido" with no commitment to reply,
+   nor by an automatic acknowledgement of receipt."""
+
+#: Grading instructions for the ``contestation_review`` judge, written against
+#: :data:`CONTESTATION_RUBRIC`'s own six elements.
+CONTESTATION_JUDGE_INSTRUCTIONS: str = render_judge_instructions(
+    context=(
+        "The submission is a Brazilian institution's reply to a person who wants to contest a "
+        "high-stakes automated decision, owed under PL 2338/2023 Art. 6, II (direito de contestar) "
+        "and Art. 6, III (direito à revisão por pessoa natural). You are deciding whether the "
+        "reply actually puts a contestation and human-review process at the person's disposal — "
+        "not whether it is polite, well formatted, or full of the right nouns."
+    ),
+    element_noun="rubric element",
+    element_block=_JUDGE_ELEMENT_BLOCK,
+    element_count="6",
+    substantive_examples=(
+        "a named ouvidoria, form or address to lodge the challenge, a stated number of days to "
+        "lodge it, a named human reviewer or team, an explicit power to overturn the decision, "
+        "a commitment to come back with the result"
+    ),
+    absent_examples=(
+        '"você pode contestar esta decisão" with no channel, no deadline and no reviewer '
+        "establishes contestation_right only — the other five stay ABSENT;",
+        '"a decisão poderá ser revista" is ABSENT for human_review: review is not human review;',
+        "a word that merely resembles the element (de *forma* clara, as *médias* do setor, as "
+        "*senhoras* atendidas, uma proposta *personalizada*) establishes nothing;",
+    ),
+)
 
 
 # ---------------------------------------------------------------------------------------

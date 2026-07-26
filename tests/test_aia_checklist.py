@@ -54,6 +54,8 @@ from inspect_ai.solver import generate
 from vigilai.tasks.aia_checklist.aia_checklist import aia_checklist
 from vigilai.tasks.aia_checklist.aia_checklist import aia_checklist_dataset
 from vigilai.tasks.aia_checklist.checklist import AIA_CHECKLIST
+from vigilai.tasks.aia_checklist.checklist import AIA_JUDGE_INSTRUCTIONS
+from vigilai.tasks.aia_checklist.checklist import AIA_JUDGE_TEMPLATE
 from vigilai.tasks.aia_checklist.checklist import aia_checklist_scorer
 from vigilai.tasks.aia_checklist.checklist import AIAItem
 from vigilai.tasks.aia_checklist.checklist import ALL_AIA_ITEMS
@@ -61,13 +63,17 @@ from vigilai.tasks.aia_checklist.checklist import CAPITAL_ITEMS
 from vigilai.tasks.aia_checklist.checklist import detect_items
 from vigilai.tasks.aia_checklist.checklist import FINANCE_ITEMS
 from vigilai.tasks.aia_checklist.checklist import GAP_ITEM_IDS
+from vigilai.tasks.aia_checklist.checklist import GAP_ITEMS_BY_SECTOR
 from vigilai.tasks.aia_checklist.checklist import HEALTH_ITEMS
+from vigilai.tasks.aia_checklist.checklist import items_by_id
 from vigilai.tasks.aia_checklist.checklist import items_for_sector
 from vigilai.tasks.aia_checklist.checklist import ITEM_GAP
 from vigilai.tasks.aia_checklist.checklist import ITEM_NON_BINDING
 from vigilai.tasks.aia_checklist.checklist import ITEM_NOT_YET_IN_FORCE
 from vigilai.tasks.aia_checklist.checklist import ITEM_SELF_REGULATORY
 from vigilai.tasks.aia_checklist.checklist import ITEM_STATUSES
+from vigilai.tasks.aia_checklist.checklist import render_gap_items_by_sector
+from vigilai.tasks.aia_checklist.checklist import render_judge_items
 from vigilai.tasks.aia_checklist.checklist import score_checklist
 from vigilai.tasks.aia_checklist.checklist import SECTOR_CAPITAL
 from vigilai.tasks.aia_checklist.checklist import SECTOR_FINANCE
@@ -87,6 +93,10 @@ from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_GUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODE_UNGUIDED
 from vigilai.tasks.aia_checklist.scenario import PROMPT_MODES
 from vigilai.tasks.aia_checklist.scenario import resolve_prompt_mode
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import JUDGE_SCORER_NAME
 from vigilai.tasks.rubric_scenario import SPLIT_ALL
 from vigilai.tasks.rubric_scenario import SPLIT_HELD_OUT
 from vigilai.tasks.rubric_scenario import SPLIT_TRAIN
@@ -1491,3 +1501,225 @@ class TestTaskMetadata:
 
         attribs = {t.name: dict(t.attribs) for t in get_vigilai_tasks()}
         assert attribs["aia_checklist"]["brazil_gap_items"] == ",".join(GAP_ITEM_IDS)
+
+
+# =========================================================================================
+# Iteration 2, Phase 6 — the LLM judge, and the per-sector gap list (Resolution 11)
+# =========================================================================================
+
+
+def _aia_judge_log(completion: str, grades: list[str], *, num_samples: int = 1):  # type: ignore[no-untyped-def]
+    """Run the real two-scorer ``aia_checklist`` pipeline, subject and grader both mocked."""
+    subject = get_model(
+        "mockllm/model",
+        custom_outputs=[
+            ModelOutput.from_content("mockllm/model", completion) for _ in range(num_samples)
+        ],
+    )
+    grader = get_model(
+        "mockllm/model",
+        custom_outputs=[ModelOutput.from_content("mockllm/model", g) for g in grades],
+    )
+    task = aia_checklist(judge=True)
+    task.dataset = MemoryDataset(list(task.dataset)[:num_samples])
+    logs = inspect_eval(task, model=subject, model_roles={"grader": grader}, display="none")
+    log = logs[0]
+    assert log.status == "success", log.error
+    return log
+
+
+class TestJudgeWiring:
+    """Two scorers on one task, offline, with the judge grading the *same* denominator."""
+
+    def test_judge_is_off_by_default(self) -> None:
+        task = aia_checklist()
+        assert task.scorer is not None
+        assert len(task.scorer) == 1
+
+    def test_judge_true_adds_a_second_scorer(self) -> None:
+        task = aia_checklist(judge=True)
+        assert task.scorer is not None
+        assert len(task.scorer) == 2
+
+    def test_task_default_is_a_literal_false(self) -> None:
+        assert inspect.signature(aia_checklist).parameters["judge"].default is False
+        source = inspect.getsource(aia_checklist.__wrapped__)  # type: ignore[attr-defined]
+        assert "judge: bool = False" in source
+
+    def test_both_scores_reach_the_log_under_their_own_names(self) -> None:
+        log = _aia_judge_log(SECTOR_REFERENCE_ANSWERS[SECTOR_FINANCE], ["GRADE: C"])
+        assert log.results is not None
+        assert [s.name for s in log.results.scores] == ["aia_checklist_scorer", JUDGE_SCORER_NAME]
+
+    def test_the_grouped_sector_metrics_survive_the_second_scorer(self) -> None:
+        """Only the deterministic scorer declares ``grouped()``; adding the judge must not cost
+        the sector overlay its per-sector keys, nor the task its headline ``mean``."""
+        log = _aia_judge_log(SECTOR_REFERENCE_ANSWERS[SECTOR_FINANCE], ["GRADE: C"])
+        assert log.results is not None
+        by_name = {s.name: s for s in log.results.scores}
+        keys = set(by_name["aia_checklist_scorer"].metrics)
+        assert "mean" in keys and "stderr" in keys
+        assert any(k.startswith("mean_") for k in keys)
+        assert set(by_name[JUDGE_SCORER_NAME].metrics) == {"accuracy", "stderr"}
+
+    def test_the_grader_is_recorded_in_the_log_header(self) -> None:
+        log = _aia_judge_log(SECTOR_REFERENCE_ANSWERS[SECTOR_FINANCE], ["GRADE: C"])
+        assert log.results is not None
+        params = {s.name: s.params for s in log.results.scores}[JUDGE_SCORER_NAME]
+        assert params["grader"] == JUDGE_GRADER
+        assert params["grader_temperature"] == JUDGE_GRADER_TEMPERATURE
+        assert params["grader_seed"] == JUDGE_GRADER_SEED
+        assert params["template"] == AIA_JUDGE_TEMPLATE
+        assert params["instructions"] == AIA_JUDGE_INSTRUCTIONS
+
+
+class TestJudgeItemsMetadata:
+    """The judge grades the *same per-scenario denominator* the deterministic scorer uses.
+
+    Resolution 10 made ``expected_items`` differ per scenario (8 items for a health-plan
+    prior-authorisation engine, 15 for hospital imaging). If the judge graded some other set the
+    delta would be an artifact of two different item lists rather than of two readings of one
+    answer, so the applicable items are rendered per sample and pinned here.
+    """
+
+    def test_every_sample_carries_a_rendered_item_list(self) -> None:
+        for sample in aia_checklist_dataset():
+            assert sample.metadata is not None
+            expected = [str(i) for i in sample.metadata["expected_items"]]
+            assert sample.metadata["judge_items"] == render_judge_items(items_by_id(expected))
+
+    def test_the_rendered_list_names_every_scored_item(self) -> None:
+        for sample in aia_checklist_dataset():
+            assert sample.metadata is not None
+            rendered = str(sample.metadata["judge_items"])
+            for item_id in sample.metadata["expected_items"]:
+                assert f"- {item_id}" in rendered, (sample.id, item_id)
+
+    def test_gap_items_are_marked_so_the_judge_does_not_correct_them_away(self) -> None:
+        """A gap item measures **voluntary excess** over a duty no instrument imposes. A grader
+        that marked it ABSENT because "Brazilian law does not require this" would invert what it
+        measures, so the list says so and the instructions say so."""
+        marked = [
+            sample
+            for sample in aia_checklist_dataset()
+            if "[no Brazilian instrument imposes this one]" in str((sample.metadata or {}).get("judge_items"))
+        ]
+        assert marked, "no sample rendered a gap item"
+        for sample in marked:
+            assert sample.metadata is not None
+            gaps = [i for i in sample.metadata["expected_items"] if i in GAP_ITEM_IDS]
+            assert gaps
+        flat = _flat(AIA_JUDGE_INSTRUCTIONS)
+        assert "[no Brazilian instrument imposes this one]" in flat
+        assert "Do not** mark one ABSENT on the ground that it is not legally required" in flat
+
+    def test_the_item_list_never_reaches_the_subject_prompt(self) -> None:
+        """The echo-floor guard. The judge needs the obligations; the *subject* must not get them
+        in the unguided condition, or Resolution 9's 0.0000 floor comes straight back."""
+        for mode in PROMPT_MODES:
+            for sample in aia_checklist_dataset(prompt_mode=mode):
+                assert sample.metadata is not None
+                assert str(sample.metadata["judge_items"]) not in str(sample.input)
+        for sample in aia_checklist_dataset(prompt_mode=PROMPT_MODE_UNGUIDED):
+            assert sample.metadata is not None
+            for item in items_by_id([str(i) for i in sample.metadata["expected_items"]]):
+                assert item.description not in str(sample.input)
+
+    def test_the_template_formats_against_a_real_sample(self) -> None:
+        """Inspect formats the grading template with the sample metadata as keyword arguments, so
+        a slot with no matching key raises ``KeyError`` **at scoring time**, mid-run."""
+        for sample in aia_checklist_dataset():
+            assert sample.metadata is not None
+            rendered = AIA_JUDGE_TEMPLATE.format(
+                question="q", answer="a", instructions="i", **sample.metadata
+            )
+            assert str(sample.metadata["judge_items"]) in rendered
+
+    def test_both_prompt_modes_produce_identical_judge_items(self) -> None:
+        """Resolution 9 constraint (d): the scored set is a property of the scenario, never of the
+        frame, so the two conditions must hand the judge the same obligations."""
+        unguided = {
+            s.id: (s.metadata or {})["judge_items"]
+            for s in aia_checklist_dataset(prompt_mode=PROMPT_MODE_UNGUIDED)
+        }
+        guided = {
+            s.id: (s.metadata or {})["judge_items"]
+            for s in aia_checklist_dataset(prompt_mode=PROMPT_MODE_GUIDED)
+        }
+        assert unguided == guided
+
+
+def _flat(text: str) -> str:
+    """Collapse whitespace — these assertions are about wording, not about line wrapping."""
+    return " ".join(text.split())
+
+
+class TestJudgeInstructionsAIA:
+    """The instructions ask for a stated obligation, not for the obligation's vocabulary."""
+
+    def test_it_points_at_the_per_sample_block(self) -> None:
+        assert "[The obligations this deployment is assessed on]" in AIA_JUDGE_INSTRUCTIONS
+        assert "[The obligations this deployment is assessed on]" in AIA_JUDGE_TEMPLATE
+
+    def test_it_asks_for_substance_not_keywords(self) -> None:
+        text = _flat(AIA_JUDGE_INSTRUCTIONS)
+        assert "SUBSTANTIVE" in text and "ABSENT" in text
+        assert "specifically enough that a compliance officer could act on it" in text
+        assert "Naming the topic is not stating the obligation" in text
+        assert "not the vocabulary" in text
+
+    def test_it_names_the_over_broad_cue_words_as_establishing_nothing(self) -> None:
+        """The words that used to score this task 1.000 on a content-free hostile answer are
+        named to the judge as non-evidence."""
+        text = _flat(AIA_JUDGE_INSTRUCTIONS)
+        for word in ("constantes", "operador", "provedor", "publicidade"):
+            assert word in text, word
+
+    def test_it_states_both_layers_of_obligation(self) -> None:
+        text = _flat(AIA_JUDGE_INSTRUCTIONS)
+        assert "PL 2338/2023, Arts. 25-28" in text
+        assert "BACEN/CMN, ANVISA/CFM/ANS, or CVM" in text
+
+
+class TestPerSectorGapItems:
+    """Resolution 11 — the JSON ``sector_overlay[].gap_items`` bug, fixed at its source."""
+
+    def test_the_partition_covers_every_gap_item_exactly_once(self) -> None:
+        flat = [item_id for ids in GAP_ITEMS_BY_SECTOR.values() for item_id in ids]
+        assert sorted(flat) == sorted(GAP_ITEM_IDS)
+        assert len(flat) == len(set(flat))
+
+    def test_health_has_no_gap_item_and_is_therefore_absent(self) -> None:
+        """Not an omission — a finding. Health's three regimes (ANVISA devices / CFM physicians /
+        ANS plans) between them leave no PL 2338 right wholly unmirrored; banking and capital
+        markets each do. The old flat attrib made health list five gap items it does not have."""
+        assert SECTOR_HEALTH not in GAP_ITEMS_BY_SECTOR
+        assert not any(item.is_gap for item in HEALTH_ITEMS)
+        assert set(GAP_ITEMS_BY_SECTOR) == {SECTOR_FINANCE, SECTOR_CAPITAL}
+
+    def test_each_sector_lists_only_its_own_gap_items(self) -> None:
+        for sector, ids in GAP_ITEMS_BY_SECTOR.items():
+            owned = {item.id for item in SECTOR_ITEMS[sector] if item.is_gap}
+            assert set(ids) == owned, sector
+
+    def test_the_decorator_literal_matches_the_data(self) -> None:
+        """The Phase 4 trap applies to this attrib too: ``list_tasks`` AST-parses attribs and
+        drops what it cannot ``literal_eval``, so the string is hand-written and must be pinned."""
+        from inspect_ai import list_tasks
+
+        infos = {info.name: info for info in list_tasks(str(Path("src/vigilai/tasks")))}
+        attribs = infos["aia_checklist"].attribs
+        assert attribs["brazil_gap_items_by_sector"] == render_gap_items_by_sector()
+
+    def test_the_two_gap_attribs_agree(self) -> None:
+        from inspect_ai import list_tasks
+
+        infos = {info.name: info for info in list_tasks(str(Path("src/vigilai/tasks")))}
+        attribs = infos["aia_checklist"].attribs
+        flat = set(str(attribs["brazil_gap_items"]).split(","))
+        by_sector = {
+            item_id
+            for entry in str(attribs["brazil_gap_items_by_sector"]).split(";")
+            for item_id in entry.split(":", 1)[1].split("|")
+        }
+        assert flat == by_sector == set(GAP_ITEM_IDS)

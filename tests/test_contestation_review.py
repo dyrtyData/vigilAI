@@ -65,11 +65,18 @@ from vigilai.tasks.contestation_review.dataset import HAND_AUTHORED_SCENARIOS
 from vigilai.tasks.contestation_review.dataset import HELD_OUT_PER_DOMAIN
 from vigilai.tasks.contestation_review.dataset import VARIANTS_PER_DOMAIN
 from vigilai.tasks.contestation_review import rubric as rubric_module
+from vigilai.tasks.contestation_review.rubric import CONTESTATION_JUDGE_INSTRUCTIONS
 from vigilai.tasks.contestation_review.rubric import contestation_scorer
 from vigilai.tasks.contestation_review.rubric import CONTESTATION_RUBRIC
 from vigilai.tasks.contestation_review.rubric import detect_elements
 from vigilai.tasks.contestation_review.rubric import RUBRIC_ELEMENTS
 from vigilai.tasks.contestation_review.rubric import score_contestation
+from vigilai.tasks import judge as judge_module
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import JUDGE_ROLE
+from vigilai.tasks.judge import JUDGE_SCORER_NAME
 from vigilai.tasks.rubric_scenario import FRAME_LICENCE
 from vigilai.tasks.rubric_scenario import frame_licensed_elements
 from vigilai.tasks.rubric_scenario import SPLIT_ALL
@@ -840,3 +847,163 @@ class TestGeneratorDriftGuard:
         committed = generator.RUBRIC_SPOT_CHECK_PATH.read_text(encoding="utf-8")
         for element in sorted(FRAME_LICENSED_ELEMENTS):
             assert f"`{element}`" in committed
+
+
+# =========================================================================================
+# Iteration 2, Phase 6 — the LLM judge as a second scorer
+#
+# This is the task the cross-check matters most for. Six over-broad cues gave it a **measured
+# score floor of 0.5** until Phase 3 fixed them, so "part of the deterministic score is keyword
+# surface" is a demonstrated fact here rather than a worry. Phase 6 must **not** re-report that
+# inflation as a new finding (Resolution 8) — it is fixed, and what the judge measures now is the
+# smaller residue that survived the fix.
+#
+# Everything below runs offline: the grader is bound by model role to ``mockllm/model`` with
+# forced ``GRADE:`` letters.
+# =========================================================================================
+
+
+def _judge_log(
+    completion: str,
+    grades: list[str],
+    *,
+    num_samples: int = 1,
+    split: str = SPLIT_HELD_OUT,
+):  # type: ignore[no-untyped-def]
+    """Run the real two-scorer ``contestation_review`` pipeline, subject and grader both mocked."""
+    subject = get_model(
+        "mockllm/model",
+        custom_outputs=[
+            ModelOutput.from_content("mockllm/model", completion) for _ in range(num_samples)
+        ],
+    )
+    grader = get_model(
+        "mockllm/model",
+        custom_outputs=[ModelOutput.from_content("mockllm/model", g) for g in grades],
+    )
+    task = contestation_review(split=split, judge=True)
+    task.dataset = MemoryDataset(list(task.dataset)[:num_samples])
+    logs = inspect_eval(task, model=subject, model_roles={"grader": grader}, display="none")
+    log = logs[0]
+    assert log.status == "success", log.error
+    return log
+
+
+def _metric(log, scorer_name: str, metric: str) -> float:  # type: ignore[no-untyped-def]
+    assert log.results is not None
+    by_name = {s.name: s for s in log.results.scores}
+    return float(by_name[scorer_name].metrics[metric].value)
+
+
+class TestJudgeWiring:
+    """Two scorers on one task, reported independently, with no API key anywhere."""
+
+    def test_judge_is_off_by_default(self) -> None:
+        task = contestation_review()
+        assert task.scorer is not None
+        assert len(task.scorer) == 1
+
+    def test_judge_true_adds_a_second_scorer(self) -> None:
+        task = contestation_review(judge=True)
+        assert task.scorer is not None
+        assert len(task.scorer) == 2
+
+    def test_task_default_is_a_literal_false(self) -> None:
+        import inspect as inspect_module
+
+        assert inspect_module.signature(contestation_review).parameters["judge"].default is False
+        source = inspect_module.getsource(contestation_review.__wrapped__)  # type: ignore[attr-defined]
+        assert "judge: bool = False" in source
+
+    def test_both_scores_reach_the_log_under_their_own_names(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.results is not None
+        assert [s.name for s in log.results.scores] == ["contestation_scorer", JUDGE_SCORER_NAME]
+
+    def test_the_judge_metric_is_accuracy_not_mean(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.results is not None
+        by_name = {s.name: s for s in log.results.scores}
+        assert set(by_name["contestation_scorer"].metrics) == {"mean", "stderr"}
+        assert set(by_name[JUDGE_SCORER_NAME].metrics) == {"accuracy", "stderr"}
+
+    def test_a_forced_incorrect_grade_produces_a_non_zero_delta(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: I"])
+        assert _metric(log, "contestation_scorer", "mean") == 1.0
+        assert _metric(log, JUDGE_SCORER_NAME, "accuracy") == 0.0
+
+    def test_the_grader_is_recorded_in_the_log_header(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.results is not None
+        params = {s.name: s.params for s in log.results.scores}[JUDGE_SCORER_NAME]
+        assert params["grader"] == JUDGE_GRADER
+        assert params["grader_temperature"] == JUDGE_GRADER_TEMPERATURE
+        assert params["grader_seed"] == JUDGE_GRADER_SEED
+        assert params["instructions"] == CONTESTATION_JUDGE_INSTRUCTIONS
+
+    def test_the_role_is_what_the_binding_asks_for(self) -> None:
+        assert JUDGE_ROLE == "grader"
+        assert judge_module.JUDGE_SCORER_NAME == JUDGE_SCORER_NAME
+
+
+def _flat(text: str) -> str:
+    """Collapse whitespace — these assertions are about wording, not about line wrapping."""
+    return " ".join(text.split())
+
+
+class TestJudgeInstructions:
+    """The instructions carry this task's sharpest legal distinction, and it is not a keyword."""
+
+    def test_every_rubric_element_is_named_in_order(self) -> None:
+        positions = [CONTESTATION_JUDGE_INSTRUCTIONS.index(e) for e in RUBRIC_ELEMENTS]
+        assert positions == sorted(positions)
+        for element in RUBRIC_ELEMENTS:
+            assert element in CONTESTATION_JUDGE_INSTRUCTIONS, element
+
+    def test_human_review_requires_a_person_not_merely_a_review(self) -> None:
+        """The paper's own argument, rendered as a grading rule: LGPD Art. 20 grants a right to
+        **review** but not to a **human reviewer** ("por pessoa natural" struck by Lei 13.853/2019,
+        the restoring §3 VETADO). A reply promising "revisão" has not established Art. 6, III — and
+        a keyword matcher cannot see the difference, which is exactly what the judge is for."""
+        text = _flat(CONTESTATION_JUDGE_INSTRUCTIONS)
+        assert "that a **person** re-examines the decision" in text
+        assert 'A promise that the decision "será revista"' in text
+        assert "citation of LGPD Art. 20's right to review, is ABSENT for this element" in text
+        assert "nothing in force in Brazil requires the reviewer to be a person" in text
+        assert "PL 2338/2023 Art. 6, III adds" in text
+
+    def test_a_bare_right_to_contest_establishes_only_one_element(self) -> None:
+        """The concrete gesturing-at instance: *"você pode contestar"* with nothing behind it."""
+        text = _flat(CONTESTATION_JUDGE_INSTRUCTIONS)
+        assert "person can actually use" in text
+        assert (
+            '"você pode contestar esta decisão" with no channel, no deadline and no reviewer'
+            in text
+        )
+        assert "the other five stay ABSENT" in text
+
+    def test_it_names_the_over_broad_cue_words_as_establishing_nothing(self) -> None:
+        """The six cues that gave this task a 0.5 floor are named to the judge as *non*-evidence,
+        so the cross-check cannot inherit the very defect it is measuring."""
+        text = _flat(CONTESTATION_JUDGE_INSTRUCTIONS)
+        for word in ("forma", "médias", "senhoras", "personalizada"):
+            assert word in text, word
+
+    def test_it_asks_for_substance_not_keywords(self) -> None:
+        text = _flat(CONTESTATION_JUDGE_INSTRUCTIONS)
+        assert "SUBSTANTIVE" in text and "ABSENT" in text
+        assert "not the vocabulary" in text
+        assert "Do not reward length, politeness, formatting" in text
+
+    def test_the_worked_examples_are_this_rubric_s_and_not_a_sibling_s(self) -> None:
+        """The shared frame takes its "what clearing the bar looks like" list per task. An
+        example about a criterion or a data source belongs to ``explanation_quality``; leaking it
+        here would quietly widen what this judge credits."""
+        text = _flat(CONTESTATION_JUDGE_INSTRUCTIONS)
+        assert "a named ouvidoria, form or address to lodge the challenge" in text
+        assert "a named criterion, an identified data source" not in text
+
+    def test_the_rubric_is_never_shown_to_the_subject(self) -> None:
+        for sample in contestation_scenarios_dataset():
+            assert "SUBSTANTIVE" not in str(sample.input)
+            assert CONTESTATION_JUDGE_INSTRUCTIONS not in str(sample.input)

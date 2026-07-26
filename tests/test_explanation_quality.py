@@ -42,6 +42,7 @@ left for a human reviewer is judgment. In particular:
 
 from __future__ import annotations
 
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -71,6 +72,15 @@ from vigilai.tasks.explanation_quality.explanation_quality import explanation_qu
 from vigilai.tasks.explanation_quality.explanation_quality import FEW_SHOT_EXAMPLE
 from vigilai.tasks.explanation_quality import rubric as rubric_module
 from vigilai.tasks.explanation_quality.rubric import detect_elements
+from vigilai.tasks.explanation_quality.rubric import EXPLANATION_JUDGE_INSTRUCTIONS
+from vigilai.tasks import judge as judge_module
+from vigilai.tasks.judge import JUDGE_GRADE_PATTERN
+from vigilai.tasks.judge import JUDGE_GRADER
+from vigilai.tasks.judge import JUDGE_GRADER_CONFIG
+from vigilai.tasks.judge import JUDGE_GRADER_SEED
+from vigilai.tasks.judge import JUDGE_GRADER_TEMPERATURE
+from vigilai.tasks.judge import JUDGE_ROLE
+from vigilai.tasks.judge import JUDGE_SCORER_NAME
 from vigilai.tasks.explanation_quality.rubric import EXPLANATION_RUBRIC
 from vigilai.tasks.explanation_quality.rubric import RUBRIC_ELEMENTS
 from vigilai.tasks.explanation_quality.rubric import rubric_scorer
@@ -809,3 +819,272 @@ class TestGeneratorDriftGuard:
                 assert f"`{element}`" in committed
                 if span != FRAME_LICENCE:
                     assert span in committed, (scenario.id, element)
+
+
+# =========================================================================================
+# Iteration 2, Phase 6 — the LLM judge as a second scorer
+#
+# Reviewer ask #2, and the whole phase runs offline: the grader is bound by **model role**, so
+# these tests inject ``mockllm/model`` with forced ``GRADE:`` letters for the grader as well as
+# for the subject. Nothing here needs an API key, and nothing here makes a network call.
+# =========================================================================================
+
+
+def _judge_log(
+    completion: str,
+    grades: list[str],
+    *,
+    num_samples: int = 1,
+    split: str = SPLIT_HELD_OUT,
+):  # type: ignore[no-untyped-def]
+    """Run the real two-scorer ``explanation_quality`` pipeline with a mocked subject and grader.
+
+    ``completion`` is what the subject model returns for every sample; ``grades`` are the grader's
+    raw completions, one per sample, so a test can force the judge's verdict independently of the
+    deterministic score. Returns the ``EvalLog``.
+    """
+    subject = get_model(
+        "mockllm/model",
+        custom_outputs=[
+            ModelOutput.from_content("mockllm/model", completion) for _ in range(num_samples)
+        ],
+    )
+    grader = get_model(
+        "mockllm/model",
+        custom_outputs=[ModelOutput.from_content("mockllm/model", g) for g in grades],
+    )
+    task = explanation_quality(split=split, judge=True)
+    task.dataset = MemoryDataset(list(task.dataset)[:num_samples])
+    logs = inspect_eval(
+        task,
+        model=subject,
+        model_roles={"grader": grader},
+        display="none",
+    )
+    log = logs[0]
+    assert log.status == "success", log.error
+    return log
+
+
+def _metric(log, scorer_name: str, metric: str) -> float:  # type: ignore[no-untyped-def]
+    assert log.results is not None
+    by_name = {s.name: s for s in log.results.scores}
+    return float(by_name[scorer_name].metrics[metric].value)
+
+
+class TestJudgeWiring:
+    """Two scorers on one task, reported independently, with no API key anywhere."""
+
+    def test_judge_is_off_by_default(self) -> None:
+        task = explanation_quality()
+        assert task.scorer is not None
+        assert len(task.scorer) == 1
+
+    def test_judge_true_adds_a_second_scorer(self) -> None:
+        """Constructible with **no API key** — the grader is resolved at scoring time, not here.
+        If this ever regresses to eager resolution the whole phase stops being testable."""
+        task = explanation_quality(judge=True)
+        assert task.scorer is not None
+        assert len(task.scorer) == 2
+
+    def test_task_default_is_a_literal_false(self) -> None:
+        """The literal-default trap: ``make default-config`` serializes the default's *source
+        text*, so a named constant would write an identifier into the YAML."""
+        import inspect as inspect_module
+
+        assert (
+            inspect_module.signature(explanation_quality).parameters["judge"].default is False
+        )
+        source = inspect_module.getsource(explanation_quality.__wrapped__)  # type: ignore[attr-defined]
+        assert "judge: bool = False" in source
+
+    def test_both_scores_reach_the_log_under_their_own_names(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.results is not None
+        assert [s.name for s in log.results.scores] == ["rubric_scorer", JUDGE_SCORER_NAME]
+
+    def test_the_judge_metric_is_accuracy_not_mean(self) -> None:
+        """The two scorers are on **different scales**, and this is where that starts:
+        ``model_graded_qa`` is decorated ``@scorer(metrics=[accuracy(), stderr()])``."""
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.results is not None
+        by_name = {s.name: s for s in log.results.scores}
+        assert set(by_name["rubric_scorer"].metrics) == {"mean", "stderr"}
+        assert set(by_name[JUDGE_SCORER_NAME].metrics) == {"accuracy", "stderr"}
+
+    def test_every_sample_carries_both_scores(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C", "GRADE: I"], num_samples=2)
+        samples = log.samples or []
+        assert len(samples) == 2
+        for sample in samples:
+            assert set(sample.scores or {}) == {"rubric_scorer", JUDGE_SCORER_NAME}
+
+    def test_a_forced_incorrect_grade_produces_a_non_zero_delta(self) -> None:
+        """The headline check: a completion the detector scores 1.0, graded ``I`` by the judge.
+        A judge that could not disagree with the cue lists would answer nothing."""
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: I"])
+        deterministic = _metric(log, "rubric_scorer", "mean")
+        judge = _metric(log, JUDGE_SCORER_NAME, "accuracy")
+        assert deterministic == 1.0
+        assert judge == 0.0
+        assert deterministic - judge == 1.0
+
+    def test_partial_credit_scores_a_half(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: P"])
+        assert _metric(log, JUDGE_SCORER_NAME, "accuracy") == 0.5
+
+    def test_the_last_grade_wins(self) -> None:
+        """The grade pattern's greedy prefix binds to the **final** ``GRADE:``, so a letter the
+        grader echoes while quoting the submission cannot hijack the verdict."""
+        log = _judge_log(
+            FULL_COVERAGE_PT,
+            ["The reply claims 'GRADE: C' but establishes nothing.\nGRADE: I"],
+        )
+        assert _metric(log, JUDGE_SCORER_NAME, "accuracy") == 0.0
+
+    def test_the_grader_is_recorded_in_the_log_header(self) -> None:
+        """Reproducible from the artifact alone: the scorer's own params carry the grader id and
+        both config keys, and the bound role records what actually graded."""
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.results is not None
+        params = {s.name: s.params for s in log.results.scores}[JUDGE_SCORER_NAME]
+        assert params["grader"] == JUDGE_GRADER
+        assert params["grader_temperature"] == JUDGE_GRADER_TEMPERATURE
+        assert params["grader_seed"] == JUDGE_GRADER_SEED
+        assert params["instructions"] == EXPLANATION_JUDGE_INSTRUCTIONS
+        roles = log.eval.model_roles or {}
+        assert roles["grader"].model == "mockllm/model"
+
+    def test_each_sample_records_which_grader_graded_it(self) -> None:
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        sample = (log.samples or [])[0]
+        judge_score = (sample.scores or {})[JUDGE_SCORER_NAME]
+        # ``Model.name`` is the part after the provider, so the mock records as ``model``. What
+        # matters is that the *resolved* grader is stamped, not the declared one.
+        assert (judge_score.metadata or {})["judge_grader"] == get_model("mockllm/model").name
+
+
+class TestGraderBinding:
+    """Role first, pinned Opus grader second, **never** the subject model."""
+
+    def test_resolution_asks_for_the_role_with_the_pinned_grader_as_the_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Inspect's own ``model_graded_qa(model_role=…)`` falls back to the model **under
+        evaluation** when the role is unbound, which would silently turn the cross-check into
+        self-grading. The explicit ``default`` is what removes that path — asserted by capturing
+        the call rather than by needing an API key to observe it."""
+        captured: dict[str, object] = {}
+        real_get_model = judge_module.get_model
+
+        def _spy(*args, **kwargs):  # type: ignore[no-untyped-def]
+            captured.update(kwargs)
+            return real_get_model("mockllm/model")
+
+        monkeypatch.setattr(judge_module, "get_model", _spy)
+        log = _judge_log(FULL_COVERAGE_PT, ["GRADE: C"])
+        assert log.status == "success"
+        assert captured["role"] == JUDGE_ROLE
+        assert captured["default"] == JUDGE_GRADER
+        config = captured["config"]
+        assert config.temperature == JUDGE_GRADER_TEMPERATURE  # type: ignore[union-attr]
+        assert config.seed == JUDGE_GRADER_SEED  # type: ignore[union-attr]
+
+    def test_the_pinned_grader_config_is_the_determinism_contract(self) -> None:
+        """``temperature=0, seed=42`` — the two keys Opus 5 / 4.8 / 4.7 and Fable 5 reject with a
+        400, which is why the grader id is pinned to Opus 4.6 and carries a version-trap warning."""
+        assert JUDGE_GRADER == "anthropic/claude-opus-4-6"
+        assert JUDGE_GRADER_CONFIG.temperature == 0
+        assert JUDGE_GRADER_CONFIG.seed == 42
+        # The trap is written down where a maintainer reaching for a newer model will read it.
+        docstring = judge_module.__doc__ or ""
+        assert "Do not \"upgrade\" the grader" in docstring
+        assert "Opus 5, Opus 4.8, Opus 4.7 and Fable 5" in docstring
+        assert "HTTP 400" in docstring
+
+    def test_the_grader_is_not_a_subject_model(self) -> None:
+        """No self-grading: the pinned grader must not be one of the models being evaluated."""
+        subjects = {"anthropic/claude-haiku-4-5", "anthropic/claude-sonnet-4-6"}
+        assert JUDGE_GRADER not in subjects
+
+
+def _flat(text: str) -> str:
+    """Collapse whitespace, so an assertion about *wording* is not an assertion about wrapping.
+
+    The instructions are hard-wrapped for the human who has to read them against the rubric; the
+    tests below are about what they say, not where the line breaks fall.
+    """
+    return " ".join(text.split())
+
+
+class TestJudgeInstructions:
+    """The instructions are the substance of the phase — a fuzzier keyword matcher answers nothing.
+
+    These pin the properties that separate the two: every rubric element is named, each is defined
+    by what the *affected person* could do rather than by vocabulary, wording-independence is
+    stated outright, and merely gesturing at an element is called out as ABSENT by example.
+    """
+
+    def test_every_rubric_element_is_named(self) -> None:
+        for element in RUBRIC_ELEMENTS:
+            assert element in EXPLANATION_JUDGE_INSTRUCTIONS, element
+
+    def test_the_elements_are_in_rubric_order(self) -> None:
+        positions = [EXPLANATION_JUDGE_INSTRUCTIONS.index(e) for e in RUBRIC_ELEMENTS]
+        assert positions == sorted(positions)
+
+    def test_it_asks_for_substance_not_keywords(self) -> None:
+        text = _flat(EXPLANATION_JUDGE_INSTRUCTIONS)
+        assert "SUBSTANTIVE" in text and "ABSENT" in text
+        assert "commits to the thing concretely enough" in text
+        assert "not the vocabulary" in text
+        assert "Do not reward length, politeness, formatting" in text
+
+    def test_it_names_the_gestured_at_failure_mode(self) -> None:
+        """The concrete instance the human asked to see: an element merely gestured at must be
+        marked ABSENT."""
+        text = _flat(EXPLANATION_JUDGE_INSTRUCTIONS)
+        assert (
+            '"você pode contestar esta decisão" with no channel, no deadline and no reviewer '
+            "is ABSENT for contestation_path" in text
+        )
+        assert '"Consideramos diversos critérios e fatores" with no criterion named' in text
+
+    def test_it_credits_an_unexpected_phrasing(self) -> None:
+        """The other half of the same requirement: a commitment made in words no cue list would
+        anticipate must count in full."""
+        text = _flat(EXPLANATION_JUDGE_INSTRUCTIONS)
+        assert "a synonym, a paraphrase, an idiom" in text
+        assert "uses none of the words in the list above and still plainly commits" in text
+
+    def test_the_substantive_examples_are_this_rubric_s(self) -> None:
+        """The shared frame takes its "what clearing the bar looks like" list per task, so a
+        sibling's examples cannot quietly widen what this judge credits."""
+        text = _flat(EXPLANATION_JUDGE_INSTRUCTIONS)
+        assert "a named criterion, an identified data source" in text
+        assert "a named ouvidoria, form or address" not in text
+
+    def test_it_states_the_legal_frame(self) -> None:
+        text = _flat(EXPLANATION_JUDGE_INSTRUCTIONS)
+        assert "PL 2338/2023 Art. 6, I" in text
+        assert "LGPD Art. 20" in text
+
+    def test_the_grade_mapping_is_stated_rather_than_left_to_taste(self) -> None:
+        text = _flat(EXPLANATION_JUDGE_INSTRUCTIONS)
+        assert "GRADE: C if every rubric element is SUBSTANTIVE" in text
+        assert "at least half of them (rounding up) are SUBSTANTIVE, but not all" in text
+        assert "SUBSTANTIVE COUNT: <how many are SUBSTANTIVE>/6" in text
+
+    def test_the_grade_pattern_matches_what_the_instructions_ask_for(self) -> None:
+        """A custom ``instructions`` requires a matching ``grade_pattern``; a mismatch would score
+        every sample ``I`` and look like a devastating finding."""
+        for letter in ("C", "P", "I"):
+            match = re.search(JUDGE_GRADE_PATTERN, f"reasoning\n\nGRADE: {letter}")
+            assert match is not None and match.group(1) == letter
+
+    def test_the_rubric_itself_is_never_shown_to_the_subject(self) -> None:
+        """The judge instructions enumerate the rubric; the subject's prompt must not, or the
+        benchmark acquires the prompt-echo floor ``aia_checklist`` had to be rescued from."""
+        for sample in explanation_scenarios_dataset():
+            assert "SUBSTANTIVE" not in str(sample.input)
+            assert EXPLANATION_JUDGE_INSTRUCTIONS not in str(sample.input)
