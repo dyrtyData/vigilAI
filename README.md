@@ -1,5 +1,7 @@
 # vigilAI
 
+> ⛔ **Retraction (2026-07-26):** the English-vs-Portuguese "AI-disclosure gap" reported in this README (≈ −0.48) was an artifact of a scoring bug in the benchmark's own target — the correct Portuguese answer "NÃO" could not match the English target "NO." Re-measured, the Brazil-vs-EU delta is −0.014 ± 0.014 (Claude Haiku 4.5) and −0.038 ± 0.038 (Claude Sonnet 4.6), within one standard error of zero. The open-weight disclosure figures and the EU↔Brazil bias deltas below are retracted too. Corrected results and the full account: branch [`iteration-2`](https://github.com/dyrtyData/vigilAI/tree/iteration-2), [`reports/RESULTS.md`](https://github.com/dyrtyData/vigilAI/blob/iteration-2/reports/RESULTS.md).
+
 🏆 Hackathon Results & Reviewer Reception
 Awarded Top 25% out of 217 submissions at the Global South AI Safety Hackathon
 
