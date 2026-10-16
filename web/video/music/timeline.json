@@ -1,0 +1,195 @@
+{
+  "source": "web/src/lib/project-overview.ts",
+  "bpm": 80,
+  "durationSeconds": 192,
+  "chapters": [
+    {
+      "id": "question",
+      "start": 0,
+      "end": 15,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "title",
+          "at": 0
+        },
+        {
+          "id": "question",
+          "at": 4.5
+        },
+        {
+          "id": "scope",
+          "at": 10
+        }
+      ]
+    },
+    {
+      "id": "origin",
+      "start": 15,
+      "end": 33,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "fork",
+          "at": 15
+        },
+        {
+          "id": "tasks",
+          "at": 21
+        },
+        {
+          "id": "recognition",
+          "at": 27
+        }
+      ]
+    },
+    {
+      "id": "benchmarks",
+      "start": 33,
+      "end": 72,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "overview",
+          "at": 33
+        },
+        {
+          "id": "disclosure",
+          "at": 38.5
+        },
+        {
+          "id": "fairness",
+          "at": 45.2
+        },
+        {
+          "id": "explanation",
+          "at": 51.9
+        },
+        {
+          "id": "contestation",
+          "at": 58.6
+        },
+        {
+          "id": "impact",
+          "at": 65.3
+        }
+      ]
+    },
+    {
+      "id": "design",
+      "start": 72,
+      "end": 93,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "panel",
+          "at": 72
+        },
+        {
+          "id": "same-model",
+          "at": 77.5
+        },
+        {
+          "id": "units",
+          "at": 82.5
+        },
+        {
+          "id": "repetitions",
+          "at": 88.5
+        }
+      ]
+    },
+    {
+      "id": "disclosure",
+      "start": 93,
+      "end": 123,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "retraction",
+          "at": 93
+        },
+        {
+          "id": "mechanism",
+          "at": 98
+        },
+        {
+          "id": "results",
+          "at": 104.5
+        },
+        {
+          "id": "residuals",
+          "at": 111.5
+        },
+        {
+          "id": "conclusion",
+          "at": 117
+        }
+      ]
+    },
+    {
+      "id": "validity",
+      "start": 123,
+      "end": 162,
+      "theme": "dark",
+      "beats": [
+        {
+          "id": "parser",
+          "at": 123
+        },
+        {
+          "id": "baseline",
+          "at": 128.5
+        },
+        {
+          "id": "differences",
+          "at": 137.5
+        },
+        {
+          "id": "detectors",
+          "at": 145.5
+        },
+        {
+          "id": "answer-key",
+          "at": 150.5
+        },
+        {
+          "id": "message",
+          "at": 157
+        }
+      ]
+    },
+    {
+      "id": "implementation",
+      "start": 162,
+      "end": 177,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "pipeline",
+          "at": 162
+        },
+        {
+          "id": "report",
+          "at": 169.5
+        }
+      ]
+    },
+    {
+      "id": "limitations",
+      "start": 177,
+      "end": 192,
+      "theme": "light",
+      "beats": [
+        {
+          "id": "unresolved",
+          "at": 177
+        },
+        {
+          "id": "close",
+          "at": 184.5
+        }
+      ]
+    }
+  ]
+}

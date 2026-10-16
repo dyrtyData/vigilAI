@@ -1,0 +1,30 @@
+{
+  "name": "vigilai-project-overview-film",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Editable Remotion source for the project-overview film. Kept separate from the website runtime.",
+  "scripts": {
+    "fonts": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/copy-fonts.ts",
+    "timeline": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/export-timeline.ts",
+    "music": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/export-timeline.ts && uv run --no-project --python 3.12 --with numpy python music/compose.py",
+    "script-doc": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/generate-script-doc.ts",
+    "verify": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/verify.ts",
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts ProjectOverview out/project-overview-master.mp4 --codec h264 --crf 12 --pixel-format yuv420p --muted --props=render-props.json",
+    "poster": "remotion still src/index.ts Poster out/project-overview-poster.png",
+    "export": "bash scripts/export-media.sh",
+    "media": "pnpm fonts && pnpm verify && pnpm music && pnpm render && pnpm poster && pnpm export",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.534",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.534"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "typescript": "^5.9.0"
+  }
+}
